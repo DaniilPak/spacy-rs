@@ -1,0 +1,58 @@
+Hello, world! This is a test.
+I can't believe it's not butter... or is it?!
+Visit https://www.example.com/path?query=1&b=2#frag or http://foo.bar.
+Email me at john.doe+spam@example.co.uk, thanks.
+The price is $4.99 (about €4.50) or £3.80.
+We're gonna need 3.5 kg of flour and 2,000 eggs.
+"Quoted text," she said. 'Single quotes' too.
+U.S.A. and U.K. are abbreviations; so is e.g. and i.e.
+It's 10:30pm on 12/25/2023 — Christmas!
+Don't you dare! I'll do it. He'd've known. They'll've left.
+Emoji test: I ❤️ NY 😀😀 🇺🇸 👍🏽!
+Hyphenated-words like state-of-the-art and well-known.
+Numbers: 1st, 2nd, 3rd, 4th, 100th, -5, +7, ±3, ~10.
+Punctuation runs!!! ??? ... ---- *** ((( )))
+Tabs	and   multiple   spaces		here.
+Newlines
+in
+
+text.
+C++ and C# are languages; so is F#.
+The year 1990s and the '80s were fun.
+He said: "Stop!" — and left (quickly).
+Mr. Smith met Dr. Jones at 5 p.m. in St. Louis.
+Apple Inc. is looking at buying U.K. startup for $1 billion.
+San Francisco considers banning sidewalk delivery robots
+London is a big city in the United Kingdom.
+3x4=12, 5*6=30, 10/2=5, 2^8=256, 7-3=4
+#hashtag @mention $TICKER %percent
+www.google.com google.com bit.ly/abc123 ftp://files.example.org/x.zip
+:) :-) ;) :( :D <3 ^_^ (-: =)
+O'Neil's book wasn't O'Reilly's.
+The temperature was 25°C or 77°F.
+50% of 200km is 100km; 3mph vs 5kmh.
+I'm, you're, we've, she'd, it'll, y'all, ma'am.
+cannot gimme gonna gotta lemme wanna
+Let's go! Let’s go! don’t won’t can’t
+Ph.D. M.D. B.A. etc. vs. Jan. Feb. Mar.
+a.m. p.m. Mt. Ft. Inc. Ltd. Co. Corp.
+(Parenthetical [nested {braces}]) <angle>
+...leading ellipsis and trailing ellipsis...
+Über naïve café résumé façade coöperate.
+ALL CAPS SENTENCE HERE. MiXeD CaSe WoRdS.
+1,000,000 1.000.000 1 000 000 0.5 .5 5.
+The U.N.'s report (2019) said "no".
+she said—no, really—that it was fine
+Is this a question?Yes.No!Maybe...
+a/b c\d e|f g_h i~j k`l
+'Tis the season. 'Twas the night.
+3D 4K 5G 2B 10x 1080p H2O CO2
+http://example.com/über?x=ü&y=1
+Ain't nobody got time for that, y'know.
+It costs USD 5 or 5 USD or US$5 or C$10.
+2023-01-01T12:00:00Z ISO dates and 12-31-1999.
+foo@bar baz@qux.com @handle email@domain
+Ex-president and co-founder re-elected.
+He wasn't. She isn't. They aren't. We weren't.
+“Smart quotes” and ‘single smart’ and „German“ and «French».
+The end.

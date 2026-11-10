@@ -1,0 +1,32 @@
+[package]
+name = "spacy-rs"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+authors = ["DaniilPak"]
+description = "Industrial-strength NLP in pure Rust: a spaCy-compatible tokenizer, Doc/Token/Span, Matcher, PhraseMatcher, EntityRuler, lemmatizer and en_core_web_sm inference"
+license = "MIT"
+repository = "https://github.com/DaniilPak/spacy-rs"
+homepage = "https://github.com/DaniilPak/spacy-rs"
+documentation = "https://docs.rs/spacy-rs"
+readme = "README.md"
+keywords = ["nlp", "spacy", "tokenizer", "ner", "linguistics"]
+categories = ["text-processing", "science"]
+exclude = ["tests/fixtures/*.json.large", "tools/__pycache__", "/.github"]
+
+[lib]
+name = "spacy"
+
+[dependencies]
+fancy-regex = "0.20"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+rmpv = "1.3"
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+rayon = { version = "1.12", optional = true }
+
+[features]
+default = ["rayon"]
+rayon = ["dep:rayon"]
+
+[dev-dependencies]
