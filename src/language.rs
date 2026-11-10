@@ -40,7 +40,12 @@ pub struct Language {
 
 impl std::fmt::Debug for Language {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Language(lang={}, pipeline={:?})", self.lang, self.pipe_names())
+        write!(
+            f,
+            "Language(lang={}, pipeline={:?})",
+            self.lang,
+            self.pipe_names()
+        )
     }
 }
 
@@ -52,7 +57,8 @@ pub fn blank(lang_code: &str) -> Result<Language, Error> {
 impl Language {
     /// Create a blank pipeline (tokenizer only).
     pub fn blank(lang_code: &str) -> Result<Self, Error> {
-        let data = lang::load(lang_code).ok_or_else(|| Error::UnknownLanguage(lang_code.to_string()))?;
+        let data =
+            lang::load(lang_code).ok_or_else(|| Error::UnknownLanguage(lang_code.to_string()))?;
         let vocab = Arc::new(Vocab::new(lang_code, LexAttrConfig::for_lang(&data)));
         let tokenizer = Tokenizer::for_lang(vocab.clone(), &data)?;
         Ok(Language {
@@ -91,8 +97,17 @@ impl Language {
         self.pipeline.push((name.into(), Box::new(pipe)));
     }
     /// Insert a component before another one (or at the end if `before` is missing).
-    pub fn add_pipe_before(&mut self, name: impl Into<String>, pipe: impl Pipe + 'static, before: &str) {
-        let pos = self.pipeline.iter().position(|(n, _)| n == before).unwrap_or(self.pipeline.len());
+    pub fn add_pipe_before(
+        &mut self,
+        name: impl Into<String>,
+        pipe: impl Pipe + 'static,
+        before: &str,
+    ) {
+        let pos = self
+            .pipeline
+            .iter()
+            .position(|(n, _)| n == before)
+            .unwrap_or(self.pipeline.len());
         self.pipeline.insert(pos, (name.into(), Box::new(pipe)));
     }
     /// Add a boxed component.
@@ -110,7 +125,10 @@ impl Language {
     }
     /// Get a component by name.
     pub fn get_pipe(&self, name: &str) -> Option<&dyn Pipe> {
-        self.pipeline.iter().find(|(n, _)| n == name).map(|(_, p)| p.as_ref())
+        self.pipeline
+            .iter()
+            .find(|(n, _)| n == name)
+            .map(|(_, p)| p.as_ref())
     }
 
     /// Tokenize only (`nlp.make_doc`).
@@ -146,7 +164,11 @@ impl Language {
 
     /// Process many texts (`nlp.pipe`). Texts are split into batches of
     /// `batch_size`; batches run in parallel when the `rayon` feature is on.
-    pub fn pipe<S: AsRef<str> + Sync>(&self, texts: &[S], batch_size: usize) -> Result<Vec<Doc>, Error> {
+    pub fn pipe<S: AsRef<str> + Sync>(
+        &self,
+        texts: &[S],
+        batch_size: usize,
+    ) -> Result<Vec<Doc>, Error> {
         let bs = batch_size.max(1);
         let run = |chunk: &[S]| -> Result<Vec<Doc>, Error> {
             let mut docs: Vec<Doc> = chunk.iter().map(|t| self.make_doc(t.as_ref())).collect();

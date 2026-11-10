@@ -82,14 +82,45 @@ fn dot(a: &[f32], b: &[f32]) -> f32 {
 }
 
 /// `Y = X @ W.T + b` for a row-major `X (n, nI)` and `W (nO, nI)`.
-pub fn affine(x: &[f32], n: usize, n_in: usize, w: &[f32], b: Option<&[f32]>, n_out: usize) -> Vec<f32> {
+pub fn affine(
+    x: &[f32],
+    n: usize,
+    n_in: usize,
+    w: &[f32],
+    b: Option<&[f32]>,
+    n_out: usize,
+) -> Vec<f32> {
     let mut y = vec![0f32; n * n_out];
-    for i in 0..n {
-        let xi = &x[i * n_in..(i + 1) * n_in];
-        let yi = &mut y[i * n_out..(i + 1) * n_out];
+    if n == 1 {
         for o in 0..n_out {
-            yi[o] = dot(xi, &w[o * n_in..(o + 1) * n_in]) + b.map_or(0.0, |b| b[o]);
+            y[o] = dot(x, &w[o * n_in..(o + 1) * n_in]) + b.map_or(0.0, |b| b[o]);
         }
+        return y;
+    }
+    if let Some(b) = b {
+        for row in y.chunks_exact_mut(n_out) {
+            row.copy_from_slice(b);
+        }
+    }
+    // Y (n x nO) = X (n x nI) * W^T (nI x nO); W is row-major (nO x nI).
+    // SAFETY: all slices are sized n*n_in, n_out*n_in and n*n_out.
+    unsafe {
+        matrixmultiply::sgemm(
+            n,
+            n_in,
+            n_out,
+            1.0,
+            x.as_ptr(),
+            n_in as isize,
+            1,
+            w.as_ptr(),
+            1,
+            n_in as isize,
+            if b.is_some() { 1.0 } else { 0.0 },
+            y.as_mut_ptr(),
+            n_out as isize,
+            1,
+        );
     }
     y
 }
@@ -209,7 +240,8 @@ pub fn seq2col(x: &[f32], n: usize, d: usize, nw: usize) -> Vec<f32> {
             let j = i as isize + off;
             if j >= 0 && (j as usize) < n {
                 let j = j as usize;
-                out[i * w + slot * d..i * w + (slot + 1) * d].copy_from_slice(&x[j * d..(j + 1) * d]);
+                out[i * w + slot * d..i * w + (slot + 1) * d]
+                    .copy_from_slice(&x[j * d..(j + 1) * d]);
             }
         }
     }
@@ -229,7 +261,10 @@ impl HashEmbed {
     /// From a `hashembed` node.
     pub fn from_node(n: &Node) -> Result<Self, Error> {
         let e = n.param("E")?;
-        let seed = n.attr("seed").and_then(|s| s.as_u64()).ok_or_else(|| Error::Format("hashembed without seed".into()))?;
+        let seed = n
+            .attr("seed")
+            .and_then(|s| s.as_u64())
+            .ok_or_else(|| Error::Format("hashembed without seed".into()))?;
         Ok(HashEmbed {
             n_v: e.shape[0],
             n_o: e.shape[1],
@@ -290,7 +325,14 @@ impl PrecomputableAffine {
     }
     /// Precompute `X @ W.T` for every token: `(n, nF*nO*nP)`.
     pub fn precompute(&self, x: &[f32], n: usize) -> Vec<f32> {
-        affine(x, n, self.n_i, &self.w, None, self.n_f * self.n_o * self.n_p)
+        affine(
+            x,
+            n,
+            self.n_i,
+            &self.w,
+            None,
+            self.n_f * self.n_o * self.n_p,
+        )
     }
 }
 
@@ -300,9 +342,21 @@ mod tests {
     fn murmur_matches_thinc() {
         // values from thinc.api.NumpyOps().hash(numpy.array([...], dtype="uint64"), seed)
         assert_eq!(super::murmur3_x86_128_u64(0, 8), [0, 0, 0, 0]);
-        assert_eq!(super::murmur3_x86_128_u64(8566208034543834098, 8), [2653853934, 3922826080, 3980780901, 3736755472]);
-        assert_eq!(super::murmur3_x86_128_u64(92, 8), [777148692, 2333324333, 3313206686, 3499986499]);
-        assert_eq!(super::murmur3_x86_128_u64(0, 12), [3628889788, 3483432925, 485828337, 1486234390]);
-        assert_eq!(super::murmur3_x86_128_u64(1, 12), [2938686206, 2291508213, 2246688320, 3554967022]);
+        assert_eq!(
+            super::murmur3_x86_128_u64(8566208034543834098, 8),
+            [2653853934, 3922826080, 3980780901, 3736755472]
+        );
+        assert_eq!(
+            super::murmur3_x86_128_u64(92, 8),
+            [777148692, 2333324333, 3313206686, 3499986499]
+        );
+        assert_eq!(
+            super::murmur3_x86_128_u64(0, 12),
+            [3628889788, 3483432925, 485828337, 1486234390]
+        );
+        assert_eq!(
+            super::murmur3_x86_128_u64(1, 12),
+            [2938686206, 2291508213, 2246688320, 3554967022]
+        );
     }
 }

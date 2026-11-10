@@ -71,10 +71,17 @@ impl SpanRuler {
             self.label_map.insert(h, (p.label.clone(), id));
             match &p.pattern {
                 serde_json::Value::String(text) => {
-                    let doc = if needs_annotation(self.phrase_matcher_attr) { nlp.call(text)? } else { nlp.make_doc(text) };
+                    let doc = if needs_annotation(self.phrase_matcher_attr) {
+                        nlp.call(text)?
+                    } else {
+                        nlp.make_doc(text)
+                    };
                     self.phrase_matcher.add(&key, &[doc])?;
                 }
-                serde_json::Value::Array(_) => self.matcher.add(&key, std::slice::from_ref(&p.pattern), None)?,
+                serde_json::Value::Array(_) => {
+                    self.matcher
+                        .add(&key, std::slice::from_ref(&p.pattern), None)?
+                }
                 other => return Err(Error::Value(format!("[E097] Invalid pattern: {other}"))),
             }
             self.patterns.push(p.clone());
@@ -87,9 +94,18 @@ impl SpanRuler {
         let mut m: Vec<(u64, usize, usize)> = if self.matcher.is_empty() {
             Vec::new()
         } else {
-            self.matcher.find_allow_missing(doc).into_iter().map(|m| (m.match_id, m.start, m.end)).collect()
+            self.matcher
+                .find_allow_missing(doc)
+                .into_iter()
+                .map(|m| (m.match_id, m.start, m.end))
+                .collect()
         };
-        m.extend(self.phrase_matcher.find(doc).into_iter().map(|m| (m.match_id, m.start, m.end)));
+        m.extend(
+            self.phrase_matcher
+                .find(doc)
+                .into_iter()
+                .map(|m| (m.match_id, m.start, m.end)),
+        );
         let mut seen = HashSet::new();
         let mut out: Vec<SpanC> = Vec::new();
         for (mid, s, e) in m {
@@ -106,7 +122,18 @@ impl SpanRuler {
         }
         let st = &self.vocab.strings;
         out.sort_by(|a, b| {
-            (a.start, a.end, st.get_or_empty(a.label), st.get_or_empty(a.id)).cmp(&(b.start, b.end, st.get_or_empty(b.label), st.get_or_empty(b.id)))
+            (
+                a.start,
+                a.end,
+                st.get_or_empty(a.label),
+                st.get_or_empty(a.id),
+            )
+                .cmp(&(
+                    b.start,
+                    b.end,
+                    st.get_or_empty(b.label),
+                    st.get_or_empty(b.id),
+                ))
         });
         out
     }
@@ -116,7 +143,11 @@ impl Pipe for SpanRuler {
     fn process(&self, doc: &mut Doc) -> Result<(), Error> {
         let matches = self.find_spans(doc);
         if let Some(key) = &self.spans_key {
-            let mut spans = if self.overwrite { Vec::new() } else { doc.spans.get(key).cloned().unwrap_or_default() };
+            let mut spans = if self.overwrite {
+                Vec::new()
+            } else {
+                doc.spans.get(key).cloned().unwrap_or_default()
+            };
             if self.filter_spans {
                 let mut all = spans.clone();
                 all.extend(matches.iter().cloned());
@@ -127,7 +158,11 @@ impl Pipe for SpanRuler {
             doc.spans.insert(key.clone(), spans);
         }
         if self.annotate_ents {
-            let mut spans = if self.overwrite { Vec::new() } else { doc.ent_spans() };
+            let mut spans = if self.overwrite {
+                Vec::new()
+            } else {
+                doc.ent_spans()
+            };
             spans.extend(matches);
             let spans = filter_spans(&spans);
             doc.set_ents(&spans)?;

@@ -36,7 +36,10 @@ pub fn is_digit_char(c: char) -> bool {
 /// Python `ch.isspace()`.
 pub fn is_space_char(c: char) -> bool {
     if c.is_ascii() {
-        return matches!(c, ' ' | '\t' | '\n' | '\x0b' | '\x0c' | '\r' | '\x1c'..='\x1f');
+        return matches!(
+            c,
+            ' ' | '\t' | '\n' | '\x0b' | '\x0c' | '\r' | '\x1c'..='\x1f'
+        );
     }
     in_table(t::SPACE, c)
 }
@@ -168,7 +171,11 @@ pub fn py_lower(s: &str) -> String {
                 .iter()
                 .find(|&&x| !is_case_ignorable(x))
                 .is_some_and(|&x| is_cased(x));
-            out.push(if before && !after { '\u{3C2}' } else { '\u{3C3}' });
+            out.push(if before && !after {
+                '\u{3C2}'
+            } else {
+                '\u{3C3}'
+            });
         } else {
             lower_char_into(c, &mut out);
         }
@@ -178,7 +185,11 @@ pub fn py_lower(s: &str) -> String {
 
 /// Number of Unicode scalar values (Python `len`).
 pub fn char_len(s: &str) -> usize {
-    if s.is_ascii() { s.len() } else { s.chars().count() }
+    if s.is_ascii() {
+        s.len()
+    } else {
+        s.chars().count()
+    }
 }
 
 /// Byte offset of the `n`-th character (or `s.len()` if out of range).

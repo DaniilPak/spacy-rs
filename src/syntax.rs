@@ -10,10 +10,21 @@ pub fn noun_chunks_en(doc: &Doc) -> Result<Vec<SpanC>, Error> {
         return Err(Error::Value("[E029] noun_chunks requires the dependency parse, which requires a statistical model to be installed and loaded.".into()));
     }
     let st = &doc.vocab().strings;
-    let np_deps: Vec<u64> = ["oprd", "nsubj", "dobj", "nsubjpass", "pcomp", "pobj", "dative", "appos", "attr", "ROOT"]
-        .iter()
-        .map(|l| st.add(l))
-        .collect();
+    let np_deps: Vec<u64> = [
+        "oprd",
+        "nsubj",
+        "dobj",
+        "nsubjpass",
+        "pcomp",
+        "pobj",
+        "dative",
+        "appos",
+        "attr",
+        "ROOT",
+    ]
+    .iter()
+    .map(|l| st.add(l))
+    .collect();
     let conj = st.add("conj");
     let np_label = st.add("NP");
     let mut out = Vec::new();
@@ -54,8 +65,13 @@ impl Doc {
     /// Supported for English; other languages return an error.
     pub fn noun_chunks(&self) -> Result<Vec<Span<'_>>, Error> {
         match self.vocab().lang() {
-            "en" => Ok(noun_chunks_en(self)?.iter().map(|c| self.span_from(c)).collect()),
-            other => Err(Error::Value(format!("[E894] The 'noun_chunks' syntax iterator is not implemented for language '{other}'."))),
+            "en" => Ok(noun_chunks_en(self)?
+                .iter()
+                .map(|c| self.span_from(c))
+                .collect()),
+            other => Err(Error::Value(format!(
+                "[E894] The 'noun_chunks' syntax iterator is not implemented for language '{other}'."
+            ))),
         }
     }
 }

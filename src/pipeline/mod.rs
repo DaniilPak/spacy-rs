@@ -78,6 +78,9 @@ impl RulerPattern {
 pub fn read_jsonl_patterns(s: &str) -> Result<Vec<RulerPattern>, crate::Error> {
     s.lines()
         .filter(|l| !l.trim().is_empty())
-        .map(|l| serde_json::from_str(l).map_err(|e| crate::Error::Format(format!("bad pattern line: {e}"))))
+        .map(|l| {
+            serde_json::from_str(l)
+                .map_err(|e| crate::Error::Format(format!("bad pattern line: {e}")))
+        })
         .collect()
 }

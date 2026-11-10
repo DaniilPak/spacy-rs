@@ -176,13 +176,19 @@ impl Doc {
 
     /// Create a doc from words and (optional) trailing-space flags, like
     /// `Doc(vocab, words=..., spaces=...)`.
-    pub fn from_words<S: AsRef<str>>(vocab: Arc<Vocab>, words: &[S], spaces: Option<&[bool]>) -> Self {
+    pub fn from_words<S: AsRef<str>>(
+        vocab: Arc<Vocab>,
+        words: &[S],
+        spaces: Option<&[bool]>,
+    ) -> Self {
         let mut text = String::new();
         let mut tokens = Vec::with_capacity(words.len());
         let mut idx = 0;
         for (i, w) in words.iter().enumerate() {
             let w = w.as_ref();
-            let sp = spaces.map(|s| s.get(i).copied().unwrap_or(false)).unwrap_or(true);
+            let sp = spaces
+                .map(|s| s.get(i).copied().unwrap_or(false))
+                .unwrap_or(true);
             let mut t = TokenC::new(vocab.get(w), w.len());
             t.l_edge = i;
             t.r_edge = i;
@@ -236,7 +242,10 @@ impl Doc {
     }
     /// A span of tokens `start..end`.
     pub fn span(&self, start: usize, end: usize) -> Span<'_> {
-        assert!(start <= end && end <= self.len(), "invalid span {start}..{end}");
+        assert!(
+            start <= end && end <= self.len(),
+            "invalid span {start}..{end}"
+        );
         Span {
             doc: self,
             c: SpanC::new(start, end),
@@ -244,7 +253,10 @@ impl Doc {
     }
     /// Wrap stored span data.
     pub fn span_from(&self, c: &SpanC) -> Span<'_> {
-        Span { doc: self, c: c.clone() }
+        Span {
+            doc: self,
+            c: c.clone(),
+        }
     }
     /// A labelled span of tokens.
     pub fn labelled_span(&self, start: usize, end: usize, label: &str) -> Span<'_> {
@@ -254,7 +266,13 @@ impl Doc {
     }
 
     /// A span from character offsets (Python string indices), like `Doc.char_span`.
-    pub fn char_span(&self, start_char: usize, end_char: usize, label: Option<&str>, mode: Alignment) -> Option<Span<'_>> {
+    pub fn char_span(
+        &self,
+        start_char: usize,
+        end_char: usize,
+        label: Option<&str>,
+        mode: Alignment,
+    ) -> Option<Span<'_>> {
         if start_char > end_char {
             return None;
         }
@@ -319,14 +337,26 @@ impl Doc {
                 }
             } else if t.ent_iob == 2 || t.ent_iob == 0 || (t.ent_iob == 3 && t.ent_type == 0) {
                 if let Some(s) = start.take() {
-                    out.push(SpanC { start: s, end: i, label, kb_id: kb, id });
+                    out.push(SpanC {
+                        start: s,
+                        end: i,
+                        label,
+                        kb_id: kb,
+                        id,
+                    });
                 }
                 label = 0;
                 kb = 0;
                 id = 0;
             } else if t.ent_iob == 3 {
                 if let Some(s) = start.take() {
-                    out.push(SpanC { start: s, end: i, label, kb_id: kb, id });
+                    out.push(SpanC {
+                        start: s,
+                        end: i,
+                        label,
+                        kb_id: kb,
+                        id,
+                    });
                 }
                 start = Some(i);
                 label = t.ent_type;
@@ -335,7 +365,13 @@ impl Doc {
             }
         }
         if let Some(s) = start {
-            out.push(SpanC { start: s, end: self.len(), label, kb_id: kb, id });
+            out.push(SpanC {
+                start: s,
+                end: self.len(),
+                label,
+                kb_id: kb,
+                id,
+            });
         }
         out.into_iter()
             .filter(|c| !self.vocab.strings.get_or_empty(c.label).is_empty())
@@ -364,9 +400,18 @@ impl Doc {
     ) -> Result<(), crate::Error> {
         let entities: Vec<&SpanC> = entities.iter().filter(|e| e.label > 0).collect();
         let mut seen = vec![false; self.len()];
-        for sp in entities.iter().copied().chain(blocked).chain(missing).chain(outside) {
+        for sp in entities
+            .iter()
+            .copied()
+            .chain(blocked)
+            .chain(missing)
+            .chain(outside)
+        {
             if sp.end > self.len() || sp.start > sp.end {
-                return Err(crate::Error::Value(format!("span {}..{} out of range", sp.start, sp.end)));
+                return Err(crate::Error::Value(format!(
+                    "span {}..{} out of range",
+                    sp.start, sp.end
+                )));
             }
             for i in sp.start..sp.end {
                 if seen[i] {
@@ -409,7 +454,9 @@ impl Doc {
             }
         }
         for i in 0..self.len().saturating_sub(1) {
-            if (self.tokens[i].ent_iob == 0 || self.tokens[i].ent_iob == 2) && self.tokens[i + 1].ent_iob == 1 {
+            if (self.tokens[i].ent_iob == 0 || self.tokens[i].ent_iob == 2)
+                && self.tokens[i + 1].ent_iob == 1
+            {
                 self.tokens[i + 1].ent_iob = 3;
             }
         }
@@ -418,9 +465,15 @@ impl Doc {
 
     /// Set heads (absolute indices) and dependency labels, then recompute
     /// children, edges and sentence boundaries.
-    pub fn set_heads<S: AsRef<str>>(&mut self, heads: &[usize], deps: &[S]) -> Result<(), crate::Error> {
+    pub fn set_heads<S: AsRef<str>>(
+        &mut self,
+        heads: &[usize],
+        deps: &[S],
+    ) -> Result<(), crate::Error> {
         if heads.len() != self.len() || deps.len() != self.len() {
-            return Err(crate::Error::Value("heads/deps length must equal doc length".into()));
+            return Err(crate::Error::Value(
+                "heads/deps length must equal doc length".into(),
+            ));
         }
         for (i, (h, d)) in heads.iter().zip(deps).enumerate() {
             if *h >= self.len() {
@@ -741,14 +794,18 @@ impl<'a> Token<'a> {
         let doc = self.doc;
         let i = self.i;
         let le = self.c().l_edge.min(i);
-        (le..i).filter(move |&j| doc.head_of(j) == i).map(move |j| Token { doc, i: j })
+        (le..i)
+            .filter(move |&j| doc.head_of(j) == i)
+            .map(move |j| Token { doc, i: j })
     }
     /// Right dependents (spaCy's `Token.rights`, scanning to `r_edge`).
     pub fn rights(&self) -> impl Iterator<Item = Token<'a>> + 'a {
         let doc = self.doc;
         let i = self.i;
         let re = self.c().r_edge.max(i).min(doc.len().saturating_sub(1));
-        (i + 1..=re).filter(move |&j| doc.head_of(j) == i).map(move |j| Token { doc, i: j })
+        (i + 1..=re)
+            .filter(move |&j| doc.head_of(j) == i)
+            .map(move |j| Token { doc, i: j })
     }
     /// Direct dependents, left to right.
     pub fn children(&self) -> impl Iterator<Item = Token<'a>> + 'a {
@@ -771,7 +828,10 @@ impl<'a> Token<'a> {
             if h == cur {
                 break;
             }
-            out.push(Token { doc: self.doc, i: h });
+            out.push(Token {
+                doc: self.doc,
+                i: h,
+            });
             cur = h;
         }
         out
@@ -800,16 +860,22 @@ impl<'a> Token<'a> {
     }
     /// Leftmost token of the subtree.
     pub fn left_edge(&self) -> Token<'a> {
-        Token { doc: self.doc, i: self.c().l_edge.min(self.i) }
+        Token {
+            doc: self.doc,
+            i: self.c().l_edge.min(self.i),
+        }
     }
     /// Rightmost token of the subtree.
     pub fn right_edge(&self) -> Token<'a> {
-        Token { doc: self.doc, i: self.c().r_edge.max(self.i) }
+        Token {
+            doc: self.doc,
+            i: self.c().r_edge.max(self.i),
+        }
     }
     /// Neighbouring token at offset `k`.
     pub fn nbor(&self, k: isize) -> Option<Token<'a>> {
         let j = self.i as isize + k;
-        (j >= 0 && (j as usize) < self.doc.len()).then(|| Token {
+        (j >= 0 && (j as usize) < self.doc.len()).then_some(Token {
             doc: self.doc,
             i: j as usize,
         })
@@ -863,7 +929,14 @@ pub struct Span<'a> {
 
 impl fmt::Debug for Span<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "Span({}..{}, {:?}, {:?})", self.c.start, self.c.end, self.text(), self.label_())
+        write!(
+            f,
+            "Span({}..{}, {:?}, {:?})",
+            self.c.start,
+            self.c.end,
+            self.text(),
+            self.label_()
+        )
     }
 }
 impl fmt::Display for Span<'_> {
@@ -896,9 +969,18 @@ impl<'a> Span<'a> {
     /// Start character offset.
     pub fn start_char(&self) -> usize {
         if self.is_empty() {
-            return self.doc.tokens.get(self.c.start).map(|t| t.idx).unwrap_or_else(|| {
-                self.doc.tokens.last().map(|t| t.idx + t.lex.length + t.spacy as usize).unwrap_or(0)
-            });
+            return self
+                .doc
+                .tokens
+                .get(self.c.start)
+                .map(|t| t.idx)
+                .unwrap_or_else(|| {
+                    self.doc
+                        .tokens
+                        .last()
+                        .map(|t| t.idx + t.lex.length + t.spacy as usize)
+                        .unwrap_or(0)
+                });
         }
         self.doc.tokens[self.c.start].idx
     }
@@ -912,7 +994,12 @@ impl<'a> Span<'a> {
     }
     fn byte_range(&self) -> (usize, usize) {
         if self.is_empty() {
-            let b = self.doc.tokens.get(self.c.start).map(|t| t.byte_idx).unwrap_or(self.doc.text.len());
+            let b = self
+                .doc
+                .tokens
+                .get(self.c.start)
+                .map(|t| t.byte_idx)
+                .unwrap_or(self.doc.text.len());
             return (b, b);
         }
         let a = self.doc.tokens[self.c.start].byte_idx;
@@ -1002,6 +1089,10 @@ impl<'a> Span<'a> {
         if let Some(t) = tokens.first_mut() {
             t.sent_start = 1;
         }
-        Doc::from_parts(self.doc.vocab.clone(), self.text_with_ws().to_string(), tokens)
+        Doc::from_parts(
+            self.doc.vocab.clone(),
+            self.text_with_ws().to_string(),
+            tokens,
+        )
     }
 }

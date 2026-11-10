@@ -140,7 +140,12 @@ pub struct Matcher {
 
 impl std::fmt::Debug for Matcher {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Matcher({} keys, {} patterns)", self.keys.len(), self.patterns.len())
+        write!(
+            f,
+            "Matcher({} keys, {} patterns)",
+            self.keys.len(),
+            self.patterns.len()
+        )
     }
 }
 
@@ -152,9 +157,16 @@ fn get_matcher_attr(t: &TokenC, attr: u64) -> u64 {
 }
 
 fn ops_for(spec: &serde_json::Map<String, Value>) -> Result<Vec<Quant>, Error> {
-    let op = spec.iter().find(|(k, _)| k.eq_ignore_ascii_case("OP")).map(|(_, v)| v);
-    let Some(op) = op else { return Ok(vec![Quant::One]) };
-    let op = op.as_str().ok_or_else(|| Error::Value("OP must be a string".into()))?;
+    let op = spec
+        .iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case("OP"))
+        .map(|(_, v)| v);
+    let Some(op) = op else {
+        return Ok(vec![Quant::One]);
+    };
+    let op = op
+        .as_str()
+        .ok_or_else(|| Error::Value("OP must be a string".into()))?;
     Ok(match op {
         "*" => vec![Quant::ZeroPlus],
         "+" => vec![Quant::One, Quant::ZeroPlus],
@@ -163,19 +175,31 @@ fn ops_for(spec: &serde_json::Map<String, Value>) -> Result<Vec<Quant>, Error> {
         "!" => vec![Quant::Zero],
         o if o.starts_with('{') && o.ends_with('}') => {
             let inner = &o[1..o.len() - 1];
-            let mm = if inner.contains(',') { inner.to_string() } else { format!("{inner},{inner}") };
+            let mm = if inner.contains(',') {
+                inner.to_string()
+            } else {
+                format!("{inner},{inner}")
+            };
             let (n, m) = mm.split_once(',').expect("comma");
             let isdec = |s: &str| !s.is_empty() && s.chars().all(|c| c.is_ascii_digit());
-            let bad = (!isdec(n) && !isdec(m)) || (isdec(n) && isdec(m) && n.parse::<usize>().ok() > m.parse::<usize>().ok());
+            let bad = (!isdec(n) && !isdec(m))
+                || (isdec(n) && isdec(m) && n.parse::<usize>().ok() > m.parse::<usize>().ok());
             if bad {
                 return Err(Error::Value(format!("[E011] Unknown operator: '{op}'")));
             }
-            let n: usize = if n.is_empty() { 0 } else { n.parse().map_err(|_| Error::Value(format!("[E011] Unknown operator: '{op}'")))? };
+            let n: usize = if n.is_empty() {
+                0
+            } else {
+                n.parse()
+                    .map_err(|_| Error::Value(format!("[E011] Unknown operator: '{op}'")))?
+            };
             let mut v = vec![Quant::One; n];
             if m.is_empty() {
                 v.push(Quant::ZeroPlus);
             } else {
-                let m: usize = m.parse().map_err(|_| Error::Value(format!("[E011] Unknown operator: '{op}'")))?;
+                let m: usize = m
+                    .parse()
+                    .map_err(|_| Error::Value(format!("[E011] Unknown operator: '{op}'")))?;
                 v.extend(std::iter::repeat_n(Quant::ZeroOne, m.saturating_sub(n)));
             }
             v
@@ -233,11 +257,18 @@ impl Matcher {
     }
     /// The patterns added for a key.
     pub fn get(&self, key: &str) -> Option<&[Value]> {
-        self.raw.get(&self.vocab.strings.add(key)).map(|v| v.as_slice())
+        self.raw
+            .get(&self.vocab.strings.add(key))
+            .map(|v| v.as_slice())
     }
 
     /// Add patterns (each a JSON array of token specs) under a key.
-    pub fn add(&mut self, key: &str, patterns: &[Value], greedy: Option<Greedy>) -> Result<(), Error> {
+    pub fn add(
+        &mut self,
+        key: &str,
+        patterns: &[Value],
+        greedy: Option<Greedy>,
+    ) -> Result<(), Error> {
         self.add_impl(key, patterns, greedy, None)
     }
 
@@ -253,21 +284,39 @@ impl Matcher {
     }
 
     /// Add patterns given as a JSON string (an array of patterns).
-    pub fn add_json(&mut self, key: &str, patterns_json: &str, greedy: Option<Greedy>) -> Result<(), Error> {
-        let v: Value = serde_json::from_str(patterns_json).map_err(|e| Error::Value(format!("invalid JSON: {e}")))?;
-        let arr = v.as_array().ok_or_else(|| Error::Value("[E948] patterns must be a list".into()))?;
+    pub fn add_json(
+        &mut self,
+        key: &str,
+        patterns_json: &str,
+        greedy: Option<Greedy>,
+    ) -> Result<(), Error> {
+        let v: Value = serde_json::from_str(patterns_json)
+            .map_err(|e| Error::Value(format!("invalid JSON: {e}")))?;
+        let arr = v
+            .as_array()
+            .ok_or_else(|| Error::Value("[E948] patterns must be a list".into()))?;
         self.add(key, arr, greedy)
     }
 
-    fn add_impl(&mut self, key: &str, patterns: &[Value], greedy: Option<Greedy>, cb: Option<OnMatch>) -> Result<(), Error> {
+    fn add_impl(
+        &mut self,
+        key: &str,
+        patterns: &[Value],
+        greedy: Option<Greedy>,
+        cb: Option<OnMatch>,
+    ) -> Result<(), Error> {
         let key_id = self.vocab.strings.add(key);
         let mut compiled = Vec::new();
         for p in patterns {
-            let arr = p
-                .as_array()
-                .ok_or_else(|| Error::Value(format!("[E178] Each pattern should be a list of dicts, got {p}")))?;
+            let arr = p.as_array().ok_or_else(|| {
+                Error::Value(format!(
+                    "[E178] Each pattern should be a list of dicts, got {p}"
+                ))
+            })?;
             if arr.is_empty() {
-                return Err(Error::Value(format!("[E012] Cannot add pattern for zero tokens to matcher. Key: {key}")));
+                return Err(Error::Value(format!(
+                    "[E012] Cannot add pattern for zero tokens to matcher. Key: {key}"
+                )));
             }
             compiled.push(self.compile_pattern(arr)?);
         }
@@ -286,7 +335,10 @@ impl Matcher {
             }
         }
         self.filters.insert(key_id, greedy);
-        self.raw.entry(key_id).or_default().extend(patterns.iter().cloned());
+        self.raw
+            .entry(key_id)
+            .or_default()
+            .extend(patterns.iter().cloned());
         Ok(())
     }
 
@@ -294,7 +346,9 @@ impl Matcher {
     pub fn remove(&mut self, key: &str) -> Result<(), Error> {
         let id = self.vocab.strings.add(key);
         if !self.keys.contains(&id) {
-            return Err(Error::Value(format!("[E175] Can't remove rule for unknown match pattern ID: {key}")));
+            return Err(Error::Value(format!(
+                "[E175] Can't remove rule for unknown match pattern ID: {key}"
+            )));
         }
         self.keys.retain(|k| *k != id);
         self.patterns.retain(|(k, _)| *k != id);
@@ -307,7 +361,9 @@ impl Matcher {
     fn compile_pattern(&mut self, specs: &[Value]) -> Result<Vec<TokPat>, Error> {
         let mut out = Vec::new();
         for spec in specs {
-            let spec = spec.as_object().ok_or_else(|| Error::Value("[E154] token spec must be a dict".into()))?;
+            let spec = spec
+                .as_object()
+                .ok_or_else(|| Error::Value("[E154] token spec must be a dict".into()))?;
             if spec.is_empty() {
                 out.push(TokPat {
                     quant: Quant::One,
@@ -325,20 +381,33 @@ impl Matcher {
                     continue;
                 }
                 if up == "_" {
-                    return Err(Error::Value("custom extension attributes (`_`) are not supported".into()));
+                    return Err(Error::Value(
+                        "custom extension attributes (`_`) are not supported".into(),
+                    ));
                 }
-                let attr = norm_attr_name(k).ok_or_else(|| Error::Value(format!("[E152] The attribute {k} is not supported for token patterns.")))?;
+                let attr = norm_attr_name(k).ok_or_else(|| {
+                    Error::Value(format!(
+                        "[E152] The attribute {k} is not supported for token patterns."
+                    ))
+                })?;
                 self.seen_attrs.insert(attr);
                 match v {
                     Value::Object(d) => {
                         preds.extend(self.compile_preds(attr, d, false, None)?);
                     }
-                    Value::String(s) if attr == ENT_IOB && ["", "I", "O", "B"].contains(&s.as_str()) => {
-                        let idx = ["", "I", "O", "B"].iter().position(|x| x == s).expect("iob") as u64;
+                    Value::String(s)
+                        if attr == ENT_IOB && ["", "I", "O", "B"].contains(&s.as_str()) =>
+                    {
+                        let idx = ["", "I", "O", "B"]
+                            .iter()
+                            .position(|x| x == s)
+                            .expect("iob") as u64;
                         attrs.push((attr, idx));
                     }
                     other => {
-                        let id = value_id(&self.vocab, other).ok_or_else(|| Error::Value(format!("[E153] invalid value {other} for {k}")))?;
+                        let id = value_id(&self.vocab, other).ok_or_else(|| {
+                            Error::Value(format!("[E153] invalid value {other} for {k}"))
+                        })?;
                         attrs.push((attr, id));
                     }
                 }
@@ -369,16 +438,32 @@ impl Matcher {
         let mut out = Vec::new();
         for (ty, value) in d {
             let ty = ty.to_ascii_uppercase();
-            let fuzzy_n = ty.strip_prefix("FUZZY").filter(|r| r.is_empty() || (r.len() == 1 && r.as_bytes()[0].is_ascii_digit()));
+            let fuzzy_n = ty
+                .strip_prefix("FUZZY")
+                .filter(|r| r.is_empty() || (r.len() == 1 && r.as_bytes()[0].is_ascii_digit()));
             if ty == "REGEX" && value.is_object() {
-                out.extend(self.compile_preds(attr, value.as_object().expect("obj"), true, None)?);
+                out.extend(self.compile_preds(
+                    attr,
+                    value.as_object().expect("obj"),
+                    true,
+                    None,
+                )?);
                 continue;
             }
             if let Some(n) = fuzzy_n
                 && value.is_object()
             {
-                let f = if n.is_empty() { -1 } else { n.parse::<i64>().expect("digit") };
-                out.extend(self.compile_preds(attr, value.as_object().expect("obj"), false, Some(f))?);
+                let f = if n.is_empty() {
+                    -1
+                } else {
+                    n.parse::<i64>().expect("digit")
+                };
+                out.extend(self.compile_preds(
+                    attr,
+                    value.as_object().expect("obj"),
+                    false,
+                    Some(f),
+                )?);
                 continue;
             }
             let cache_key = format!("{attr}|{regex}|{fuzzy:?}|{ty}|{value}");
@@ -388,7 +473,9 @@ impl Matcher {
             }
             let kind = match ty.as_str() {
                 "REGEX" => {
-                    let s = value.as_str().ok_or_else(|| Error::Value("REGEX value must be a string".into()))?;
+                    let s = value
+                        .as_str()
+                        .ok_or_else(|| Error::Value("REGEX value must be a string".into()))?;
                     PredKind::Regex(crate::regex_compat::compile(s)?)
                 }
                 "IN" | "NOT_IN" | "IS_SUBSET" | "IS_SUPERSET" | "INTERSECTS" => {
@@ -399,7 +486,9 @@ impl Matcher {
                         "IS_SUPERSET" => SetOp::IsSuperset,
                         _ => SetOp::Intersects,
                     };
-                    let vals = value.as_array().ok_or_else(|| Error::Value(format!("{ty} value must be a list")))?;
+                    let vals = value
+                        .as_array()
+                        .ok_or_else(|| Error::Value(format!("{ty} value must be a list")))?;
                     let mut ids = HashSet::new();
                     let mut regexes = Vec::new();
                     let mut strs = Vec::new();
@@ -410,7 +499,11 @@ impl Matcher {
                         } else if regex {
                             regexes.push(crate::regex_compat::compile(v.as_str().unwrap_or(""))?);
                         } else if let Some(s) = v.as_str() {
-                            ids.insert(if fuzzy.is_some() { self.vocab.strings.add(s) } else { crate::strings::get_string_id(s) });
+                            ids.insert(if fuzzy.is_some() {
+                                self.vocab.strings.add(s)
+                            } else {
+                                crate::strings::get_string_id(s)
+                            });
                             strs.push(s.to_string());
                         } else if let Some(id) = value_id(&self.vocab, v) {
                             ids.insert(id);
@@ -446,7 +539,11 @@ impl Matcher {
                 }
                 t if fuzzy_n.is_some() => {
                     let n = &t[5..];
-                    let f = if n.is_empty() { -1 } else { n.parse::<i64>().expect("digit") };
+                    let f = if n.is_empty() {
+                        -1
+                    } else {
+                        n.parse::<i64>().expect("digit")
+                    };
                     PredKind::Fuzzy {
                         value: value.as_str().unwrap_or("").to_string(),
                         fuzzy: f,
@@ -498,7 +595,8 @@ impl Matcher {
                         regexes.iter().any(|r| r.is_match(s).unwrap_or(false))
                     } else if let Some(f) = fuzzy {
                         let s = st.get_or_empty(v);
-                        strs.iter().any(|x| levenshtein::levenshtein_compare(s, x, *f))
+                        strs.iter()
+                            .any(|x| levenshtein::levenshtein_compare(s, x, *f))
                     } else {
                         ids.contains(&v)
                     };
@@ -526,7 +624,11 @@ impl Matcher {
     fn is_match(&self, pat: &TokPat, t: &TokenC, cache: &mut [i8]) -> bool {
         for &pi in &pat.preds {
             if cache[pi] == 0 {
-                cache[pi] = if self.eval_pred(&self.preds[pi], t) { 1 } else { -1 };
+                cache[pi] = if self.eval_pred(&self.preds[pi], t) {
+                    1
+                } else {
+                    -1
+                };
             }
             if cache[pi] == -1 {
                 return false;
@@ -596,7 +698,10 @@ impl Matcher {
                 }
                 let state = states[si].clone();
                 states[q] = state.clone();
-                while matches!(action, Action::Retry | Action::RetryAdvance | Action::RetryExtend) {
+                while matches!(
+                    action,
+                    Action::Retry | Action::RetryAdvance | Action::RetryExtend
+                ) {
                     if action == Action::RetryExtend {
                         new_states.push(State {
                             pat: states[q].pat,

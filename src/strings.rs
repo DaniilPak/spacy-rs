@@ -5,7 +5,7 @@
 //! dependency labels, entity types, ...) which map to small integers. This module
 //! reproduces both so that IDs are interchangeable with spaCy's.
 
-use std::collections::HashMap;
+use crate::fxhash::FxHashMap as HashMap;
 use std::sync::{LazyLock, RwLock};
 
 /// MurmurHash64A, as used by spaCy via the `murmurhash` package (`hash64`).
@@ -52,7 +52,7 @@ struct Symbols {
 
 static SYMBOLS: LazyLock<Symbols> = LazyLock::new(|| {
     let items: Vec<(String, u64)> = serde_json::from_str(SYMBOLS_JSON).expect("symbols.json");
-    let mut by_str = HashMap::new();
+    let mut by_str = HashMap::default();
     let mut by_id = vec![""; items.len()];
     for (s, id) in items {
         let s: &'static str = Box::leak(s.into_boxed_str());
@@ -86,7 +86,7 @@ pub fn get_string_id(s: &str) -> u64 {
 /// stay valid for the lifetime of the store.
 #[derive(Default)]
 pub struct StringStore {
-    map: RwLock<HashMap<u64, Box<str>>>,
+    map: [RwLock<HashMap<u64, Box<str>>>; crate::fxhash::SHARDS],
 }
 
 impl StringStore {
@@ -104,13 +104,14 @@ impl StringStore {
             return id;
         }
         let h = hash_string(s);
+        let shard = &self.map[crate::fxhash::shard_of(h)];
         {
-            let r = self.map.read().expect("string store lock");
+            let r = shard.read().expect("string store lock");
             if r.contains_key(&h) {
                 return h;
             }
         }
-        self.map
+        shard
             .write()
             .expect("string store lock")
             .entry(h)
@@ -126,7 +127,9 @@ impl StringStore {
         if let Some(s) = symbol_str(id).filter(|_| id < SYMBOLS.by_id.len() as u64) {
             return Some(s);
         }
-        let r = self.map.read().expect("string store lock");
+        let r = self.map[crate::fxhash::shard_of(id)]
+            .read()
+            .expect("string store lock");
         let p = r.get(&id).map(|b| &**b as *const str)?;
         // SAFETY: entries are boxed, never removed or mutated, so the heap
         // allocation outlives `&self` even if the map rehashes.
@@ -140,14 +143,18 @@ impl StringStore {
 
     /// Whether the string is in the store (symbols are always present).
     pub fn contains(&self, s: &str) -> bool {
-        s.is_empty()
-            || symbol_id(s).is_some()
-            || self.map.read().expect("lock").contains_key(&hash_string(s))
+        s.is_empty() || symbol_id(s).is_some() || {
+            let h = hash_string(s);
+            self.map[crate::fxhash::shard_of(h)]
+                .read()
+                .expect("lock")
+                .contains_key(&h)
+        }
     }
 
     /// Number of non-symbol strings.
     pub fn len(&self) -> usize {
-        self.map.read().expect("lock").len()
+        self.map.iter().map(|m| m.read().expect("lock").len()).sum()
     }
 
     /// Whether the store has no non-symbol strings.
@@ -158,10 +165,14 @@ impl StringStore {
     /// All non-symbol strings, in arbitrary order.
     pub fn strings(&self) -> Vec<String> {
         self.map
-            .read()
-            .expect("lock")
-            .values()
-            .map(|s| s.to_string())
+            .iter()
+            .flat_map(|m| {
+                m.read()
+                    .expect("lock")
+                    .values()
+                    .map(|s| s.to_string())
+                    .collect::<Vec<_>>()
+            })
             .collect()
     }
 }

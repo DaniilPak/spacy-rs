@@ -30,13 +30,19 @@ pub fn normalize(feats: &str) -> String {
         .map(|(f, v)| format!("{f}={v}"))
         .collect();
     items.sort();
-    if items.is_empty() { EMPTY_MORPH.to_string() } else { items.join("|") }
+    if items.is_empty() {
+        EMPTY_MORPH.to_string()
+    } else {
+        items.join("|")
+    }
 }
 
 /// Individual `Field=Value` features (multi-valued fields are split).
 pub fn features(feats: &str) -> Vec<String> {
     let mut out = Vec::new();
-    for (f, v) in feats_to_pairs(feats) {
+    let mut pairs = feats_to_pairs(feats);
+    pairs.sort();
+    for (f, v) in pairs {
         for val in v.split(',') {
             out.push(format!("{f}={val}"));
         }
@@ -57,8 +63,14 @@ pub fn get(feats: &str, field: &str) -> Vec<String> {
 mod tests {
     #[test]
     fn normalizes() {
-        assert_eq!(super::normalize("Number=Sing|Case=Nom,Acc"), "Case=Acc,Nom|Number=Sing");
+        assert_eq!(
+            super::normalize("Number=Sing|Case=Nom,Acc"),
+            "Case=Acc,Nom|Number=Sing"
+        );
         assert_eq!(super::normalize(""), "_");
-        assert_eq!(super::features("PronType=Prs|Case=Nom,Acc"), vec!["Case=Acc", "Case=Nom", "PronType=Prs"]);
+        assert_eq!(
+            super::features("PronType=Prs|Case=Nom,Acc"),
+            vec!["Case=Acc", "Case=Nom", "PronType=Prs"]
+        );
     }
 }

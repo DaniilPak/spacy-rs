@@ -37,7 +37,9 @@ pub struct LemmaTables {
 
 fn gunzip_json(bytes: &[u8]) -> Value {
     let mut s = String::new();
-    flate2::read::GzDecoder::new(bytes).read_to_string(&mut s).expect("bundled gzip");
+    flate2::read::GzDecoder::new(bytes)
+        .read_to_string(&mut s)
+        .expect("bundled gzip");
     serde_json::from_str(&s).expect("bundled json")
 }
 
@@ -47,10 +49,18 @@ fn key_id(k: &str) -> u64 {
 
 impl LemmaTables {
     /// Build tables from JSON values in spacy-lookups-data format (string or numeric keys).
-    pub fn from_json(lookup: Option<&Value>, rules: Option<&Value>, exc: Option<&Value>, index: Option<&Value>) -> Self {
+    pub fn from_json(
+        lookup: Option<&Value>,
+        rules: Option<&Value>,
+        exc: Option<&Value>,
+        index: Option<&Value>,
+    ) -> Self {
         let mut t = LemmaTables::default();
         if let Some(Value::Object(m)) = lookup {
-            t.lookup = m.iter().filter_map(|(k, v)| Some((key_id(k), v.as_str()?.to_string()))).collect();
+            t.lookup = m
+                .iter()
+                .filter_map(|(k, v)| Some((key_id(k), v.as_str()?.to_string())))
+                .collect();
         }
         if let Some(Value::Object(m)) = rules {
             for (pos, rs) in m {
@@ -60,7 +70,10 @@ impl LemmaTables {
                         a.iter()
                             .filter_map(|p| {
                                 let p = p.as_array()?;
-                                Some((p.first()?.as_str()?.to_string(), p.get(1)?.as_str()?.to_string()))
+                                Some((
+                                    p.first()?.as_str()?.to_string(),
+                                    p.get(1)?.as_str()?.to_string(),
+                                ))
                             })
                             .collect()
                     })
@@ -74,7 +87,10 @@ impl LemmaTables {
                 if let Value::Object(f) = forms {
                     for (k, v) in f {
                         let ls: Vec<String> = match v {
-                            Value::Array(a) => a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect(),
+                            Value::Array(a) => a
+                                .iter()
+                                .filter_map(|x| x.as_str().map(str::to_string))
+                                .collect(),
                             Value::String(s) => vec![s.clone()],
                             _ => vec![],
                         };
@@ -88,7 +104,11 @@ impl LemmaTables {
             for (pos, forms) in m {
                 let set = forms
                     .as_array()
-                    .map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect())
+                    .map(|a| {
+                        a.iter()
+                            .filter_map(|x| x.as_str().map(str::to_string))
+                            .collect()
+                    })
                     .unwrap_or_default();
                 t.index.insert(key_id(pos), set);
             }
@@ -103,7 +123,12 @@ impl LemmaTables {
             let rules = gunzip_json(include_bytes!("../../data/lookups/en_lemma_rules.json.gz"));
             let exc = gunzip_json(include_bytes!("../../data/lookups/en_lemma_exc.json.gz"));
             let index = gunzip_json(include_bytes!("../../data/lookups/en_lemma_index.json.gz"));
-            Arc::new(LemmaTables::from_json(Some(&lookup), Some(&rules), Some(&exc), Some(&index)))
+            Arc::new(LemmaTables::from_json(
+                Some(&lookup),
+                Some(&rules),
+                Some(&exc),
+                Some(&index),
+            ))
         });
         T.clone()
     }
@@ -150,7 +175,13 @@ impl Lemmatizer {
     /// `lookup_lemmatize`.
     pub fn lookup_lemmatize(&self, token: &Token<'_>) -> Vec<String> {
         let t = token.text();
-        vec![self.tables.lookup.get(&crate::strings::get_string_id(t)).cloned().unwrap_or_else(|| t.to_string())]
+        vec![
+            self.tables
+                .lookup
+                .get(&crate::strings::get_string_id(t))
+                .cloned()
+                .unwrap_or_else(|| t.to_string()),
+        ]
     }
 
     fn is_base_form(&self, token: &Token<'_>) -> bool {
@@ -166,7 +197,10 @@ impl Lemmatizer {
         let is = |f: &str, v: &str| get(f).as_deref() == Some(v);
         (pos == "noun" && is("Number", "Sing"))
             || (pos == "verb" && is("VerbForm", "Inf"))
-            || (pos == "verb" && is("VerbForm", "Fin") && is("Tense", "Pres") && get("Number").is_none())
+            || (pos == "verb"
+                && is("VerbForm", "Fin")
+                && is("Tense", "Pres")
+                && get("Number").is_none())
             || (pos == "adj" && is("Degree", "Pos"))
             || is("VerbForm", "Inf")
             || is("VerbForm", "None")
@@ -193,7 +227,11 @@ impl Lemmatizer {
         let has_exc = t.exc.get(&pk).is_some_and(|x| !x.is_empty());
         let has_rules = t.rules.get(&pk).is_some_and(|x| !x.is_empty());
         if !(has_index || has_exc || has_rules) {
-            return if univ_pos == "propn" { vec![string.to_string()] } else { vec![py_lower(string)] };
+            return if univ_pos == "propn" {
+                vec![string.to_string()]
+            } else {
+                vec![py_lower(string)]
+            };
         }
         let empty_idx = Default::default();
         let index = t.index.get(&pk).unwrap_or(&empty_idx);
@@ -248,7 +286,9 @@ impl Pipe for Lemmatizer {
         let mut lemmas = Vec::with_capacity(doc.len());
         for t in doc.iter() {
             if self.overwrite || t.c().lemma == 0 {
-                lemmas.push(Some(self.lemmatize(&t).into_iter().next().unwrap_or_default()));
+                lemmas.push(Some(
+                    self.lemmatize(&t).into_iter().next().unwrap_or_default(),
+                ));
             } else {
                 lemmas.push(None);
             }

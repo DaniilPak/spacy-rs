@@ -58,7 +58,10 @@ pub fn as_array(v: &Value) -> Result<Array, Error> {
     if raw.len() != n * 4 {
         return Err(Error::Format("array size mismatch".into()));
     }
-    let data = raw.chunks_exact(4).map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect();
+    let data = raw
+        .chunks_exact(4)
+        .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+        .collect();
     Ok(Array { shape, data })
 }
 
@@ -93,9 +96,15 @@ impl Node {
 /// Load the flat node list of a thinc `Model.to_bytes()` blob (walk order).
 pub fn load_nodes(bytes: &[u8]) -> Result<Vec<Node>, Error> {
     let v = decode(bytes)?;
-    let nodes = get(&v, "nodes").and_then(|n| n.as_array()).ok_or_else(|| Error::Format("no nodes".into()))?;
-    let attrs = get(&v, "attrs").and_then(|n| n.as_array()).ok_or_else(|| Error::Format("no attrs".into()))?;
-    let params = get(&v, "params").and_then(|n| n.as_array()).ok_or_else(|| Error::Format("no params".into()))?;
+    let nodes = get(&v, "nodes")
+        .and_then(|n| n.as_array())
+        .ok_or_else(|| Error::Format("no nodes".into()))?;
+    let attrs = get(&v, "attrs")
+        .and_then(|n| n.as_array())
+        .ok_or_else(|| Error::Format("no attrs".into()))?;
+    let params = get(&v, "params")
+        .and_then(|n| n.as_array())
+        .ok_or_else(|| Error::Format("no params".into()))?;
     let mut out = Vec::with_capacity(nodes.len());
     for (i, n) in nodes.iter().enumerate() {
         let name = get(n, "name").and_then(as_str).unwrap_or("").to_string();

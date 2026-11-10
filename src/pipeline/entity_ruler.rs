@@ -64,7 +64,8 @@ impl EntityRuler {
 
     /// Labels of all patterns (sorted).
     pub fn labels(&self) -> Vec<String> {
-        let s: std::collections::BTreeSet<String> = self.patterns.iter().map(|p| p.label.clone()).collect();
+        let s: std::collections::BTreeSet<String> =
+            self.patterns.iter().map(|p| p.label.clone()).collect();
         s.into_iter().collect()
     }
 
@@ -94,7 +95,8 @@ impl EntityRuler {
                     self.phrase_matcher.add(&key, &[doc])?;
                 }
                 serde_json::Value::Array(_) => {
-                    self.matcher.add(&key, std::slice::from_ref(&p.pattern), None)?;
+                    self.matcher
+                        .add(&key, std::slice::from_ref(&p.pattern), None)?;
                 }
                 other => return Err(Error::Value(format!("[E097] Invalid pattern: {other}"))),
             }
@@ -108,11 +110,23 @@ impl EntityRuler {
         let mut m: Vec<(u64, usize, usize)> = if self.matcher.is_empty() {
             Vec::new()
         } else {
-            self.matcher.find_allow_missing(doc).into_iter().map(|m| (m.match_id, m.start, m.end)).collect()
+            self.matcher
+                .find_allow_missing(doc)
+                .into_iter()
+                .map(|m| (m.match_id, m.start, m.end))
+                .collect()
         };
-        m.extend(self.phrase_matcher.find(doc).into_iter().map(|m| (m.match_id, m.start, m.end)));
+        m.extend(
+            self.phrase_matcher
+                .find(doc)
+                .into_iter()
+                .map(|m| (m.match_id, m.start, m.end)),
+        );
         let mut seen = HashSet::new();
-        let mut uniq: Vec<(u64, usize, usize)> = m.into_iter().filter(|x| x.1 != x.2 && seen.insert(*x)).collect();
+        let mut uniq: Vec<(u64, usize, usize)> = m
+            .into_iter()
+            .filter(|x| x.1 != x.2 && seen.insert(*x))
+            .collect();
         uniq.sort_by(|a, b| {
             let ka = (a.2 - a.1, -(a.1 as i64));
             let kb = (b.2 - b.1, -(b.1 as i64));

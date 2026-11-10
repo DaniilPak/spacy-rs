@@ -19,10 +19,9 @@ pub struct Tagger {
 impl Tagger {
     /// Class scores per token (logits), `(len, n_labels)`.
     pub fn scores(&self, doc: &Doc) -> Result<Vec<f32>, Error> {
-        let (w, t) = doc
-            .tensor
-            .as_ref()
-            .ok_or_else(|| Error::Value("tagger needs doc.tensor; add the tok2vec component first".into()))?;
+        let (w, t) = doc.tensor.as_ref().ok_or_else(|| {
+            Error::Value("tagger needs doc.tensor; add the tok2vec component first".into())
+        })?;
         if *w != self.output.n_in {
             return Err(Error::Value("tensor width does not match tagger".into()));
         }

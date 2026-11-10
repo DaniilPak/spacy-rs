@@ -10,11 +10,10 @@ use crate::Error;
 use crate::doc::{Doc, TokenC};
 use crate::lang::{LangData, SpecialToken};
 use crate::lexeme::LexemeC;
-use crate::regex_compat;
+use crate::regex_compat::{AffixKind, AffixRegex, MatchRegex};
 use crate::strings::get_string_id;
 use crate::uchar::is_space_char;
 use crate::vocab::Vocab;
-use fancy_regex::Regex;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::{Arc, RwLock};
 
@@ -28,33 +27,26 @@ struct SpecialTok {
 /// Compiled regexes in the shapes the tokenizer needs.
 #[derive(Clone, Debug)]
 struct Patterns {
-    prefix: Option<Regex>,
-    suffix: Option<Regex>,
-    infix: Option<Regex>,
-    token_match: Option<Regex>,
-    url_match: Option<Regex>,
-}
-
-fn anchored(p: &str) -> Result<Regex, Error> {
-    let t = regex_compat::translate(p);
-    fancy_regex::RegexBuilder::new(&format!("^(?:{t})"))
-        .backtrack_limit(10_000_000)
-        .build()
-        .map_err(|e| Error::Regex(format!("{e}")))
+    prefix: Option<AffixRegex>,
+    suffix: Option<AffixRegex>,
+    infix: Option<AffixRegex>,
+    token_match: Option<MatchRegex>,
+    url_match: Option<MatchRegex>,
 }
 
 /// spaCy's tokenizer.
 pub struct Tokenizer {
     vocab: Arc<Vocab>,
     rules: BTreeMap<String, Vec<SpecialToken>>,
-    specials: HashMap<String, Arc<[SpecialTok]>>,
+    specials: crate::fxhash::FxHashMap<String, Arc<[SpecialTok]>>,
     pats: Patterns,
     pattern_src: [Option<String>; 5],
     /// Phrase patterns for special cases containing affixes: first ORTH -> [(orths, rule)].
     special_matcher: HashMap<u64, Vec<Vec<u64>>>,
     special_lens: HashSet<usize>,
     faster_heuristics: bool,
-    cache: RwLock<HashMap<String, Arc<[Arc<LexemeC>]>>>,
+    cache: [RwLock<crate::fxhash::FxHashMap<String, Arc<[(Arc<LexemeC>, usize)]>>>;
+        crate::fxhash::SHARDS],
     max_cache_size: usize,
 }
 
@@ -131,29 +123,41 @@ pub fn compile_infix_regex<S: AsRef<str>>(entries: &[S]) -> String {
 impl Tokenizer {
     /// Build a tokenizer from a configuration.
     pub fn new(vocab: Arc<Vocab>, cfg: TokenizerConfig) -> Result<Self, Error> {
-        let c = |p: &Option<String>| -> Result<Option<Regex>, Error> {
-            p.as_deref().filter(|s| !s.is_empty()).map(regex_compat::compile).transpose()
+        let c = |p: &Option<String>, k: AffixKind| -> Result<Option<AffixRegex>, Error> {
+            p.as_deref()
+                .filter(|s| !s.is_empty())
+                .map(|s| AffixRegex::new(s, k))
+                .transpose()
         };
-        let a = |p: &Option<String>| -> Result<Option<Regex>, Error> {
-            p.as_deref().filter(|s| !s.is_empty()).map(anchored).transpose()
+        let a = |p: &Option<String>| -> Result<Option<MatchRegex>, Error> {
+            p.as_deref()
+                .filter(|s| !s.is_empty())
+                .map(MatchRegex::new)
+                .transpose()
         };
         let pats = Patterns {
-            prefix: c(&cfg.prefix)?,
-            suffix: c(&cfg.suffix)?,
-            infix: c(&cfg.infix)?,
+            prefix: c(&cfg.prefix, AffixKind::Prefix)?,
+            suffix: c(&cfg.suffix, AffixKind::Suffix)?,
+            infix: c(&cfg.infix, AffixKind::Infix)?,
             token_match: a(&cfg.token_match)?,
             url_match: a(&cfg.url_match)?,
         };
         let mut t = Tokenizer {
             vocab,
             rules: BTreeMap::new(),
-            specials: HashMap::new(),
+            specials: Default::default(),
             pats,
-            pattern_src: [cfg.prefix, cfg.suffix, cfg.infix, cfg.token_match, cfg.url_match],
+            pattern_src: [
+                cfg.prefix,
+                cfg.suffix,
+                cfg.infix,
+                cfg.token_match,
+                cfg.url_match,
+            ],
             special_matcher: HashMap::new(),
             special_lens: HashSet::new(),
             faster_heuristics: cfg.faster_heuristics,
-            cache: RwLock::new(HashMap::new()),
+            cache: Default::default(),
             max_cache_size: 10_000,
         };
         for (k, v) in cfg.rules {
@@ -183,7 +187,11 @@ impl Tokenizer {
     }
 
     /// Add a special-case tokenization rule. The `ORTH`s must concatenate to `string`.
-    pub fn add_special_case(&mut self, string: &str, substrings: Vec<SpecialToken>) -> Result<(), Error> {
+    pub fn add_special_case(
+        &mut self,
+        string: &str,
+        substrings: Vec<SpecialToken>,
+    ) -> Result<(), Error> {
         let orth: String = substrings.iter().map(|s| s.orth.as_str()).collect();
         if orth != string {
             return Err(Error::Value(format!(
@@ -194,13 +202,19 @@ impl Tokenizer {
             .iter()
             .map(|s| SpecialTok {
                 lex: self.vocab.get(&s.orth),
-                norm: s.norm.as_deref().map(|n| self.vocab.strings.add(n)).unwrap_or(0),
+                norm: s
+                    .norm
+                    .as_deref()
+                    .map(|n| self.vocab.strings.add(n))
+                    .unwrap_or(0),
                 byte_len: s.orth.len(),
             })
             .collect();
         self.specials.insert(string.to_string(), toks.into());
         self.rules.insert(string.to_string(), substrings);
-        self.cache.write().expect("lock").clear();
+        for c in &self.cache {
+            c.write().expect("lock").clear();
+        }
         let needs_matcher = !self.faster_heuristics
             || self.find_prefix(string) != 0
             || !self.find_infix(string).is_empty()
@@ -222,38 +236,31 @@ impl Tokenizer {
 
     /// Length in bytes of the prefix matched at the start of `s` (0 if none).
     pub fn find_prefix(&self, s: &str) -> usize {
-        match &self.pats.prefix {
-            Some(r) => r.find(s).ok().flatten().map(|m| m.end() - m.start()).unwrap_or(0),
-            None => 0,
-        }
+        self.pats.prefix.as_ref().map_or(0, |r| r.search_len(s))
     }
 
     /// Length in bytes of the suffix matched at the end of `s` (0 if none).
     pub fn find_suffix(&self, s: &str) -> usize {
-        match &self.pats.suffix {
-            Some(r) => r.find(s).ok().flatten().map(|m| m.end() - m.start()).unwrap_or(0),
-            None => 0,
-        }
+        self.pats.suffix.as_ref().map_or(0, |r| r.search_len(s))
     }
 
     /// Byte ranges of infixes in `s`.
     pub fn find_infix(&self, s: &str) -> Vec<(usize, usize)> {
-        match &self.pats.infix {
-            Some(r) => r
-                .find_iter(s)
-                .filter_map(|m| m.ok())
-                .map(|m| (m.start(), m.end()))
-                .collect(),
-            None => Vec::new(),
-        }
+        self.pats
+            .infix
+            .as_ref()
+            .map_or_else(Vec::new, |r| r.find_iter(s))
     }
 
     fn token_match(&self, s: &str) -> bool {
-        self.pats.token_match.as_ref().is_some_and(|r| r.is_match(s).unwrap_or(false))
+        self.pats
+            .token_match
+            .as_ref()
+            .is_some_and(|r| r.is_match(s))
     }
 
     fn url_match(&self, s: &str) -> bool {
-        self.pats.url_match.as_ref().is_some_and(|r| r.is_match(s).unwrap_or(false))
+        self.pats.url_match.as_ref().is_some_and(|r| r.is_match(s))
     }
 
     /// Tokenize a string into a [`Doc`].
@@ -296,16 +303,20 @@ impl Tokenizer {
         }
     }
 
-    fn try_specials_and_cache(&self, s: &str, toks: &mut Vec<TokenC>, with_special: bool) -> (bool, bool) {
+    fn try_specials_and_cache(
+        &self,
+        s: &str,
+        toks: &mut Vec<TokenC>,
+        with_special: bool,
+    ) -> (bool, bool) {
         if with_special && let Some(sp) = self.specials.get(s) {
             Self::push_special(toks, sp);
             return (true, true);
         }
-        if let Some(c) = self.cache.read().expect("lock").get(s) {
-            for l in c.iter() {
-                let n = l.length;
-                let bl = if n == 0 { 0 } else { self.vocab.strings.get_or_empty(l.orth).len() };
-                Self::push(toks, TokenC::new(l.clone(), bl));
+        let shard = &self.cache[crate::fxhash::shard_of(crate::fxhash::hash_str(s))];
+        if let Some(c) = shard.read().expect("lock").get(s) {
+            for (l, bl) in c.iter() {
+                Self::push(toks, TokenC::new(l.clone(), *bl));
             }
             return (true, false);
         }
@@ -323,7 +334,12 @@ impl Tokenizer {
         for (i, uc) in string.char_indices() {
             if is_space_char(uc) != in_ws {
                 if start < i {
-                    self.tokenize_span(&string[start..i], &mut toks, &mut has_special, with_special);
+                    self.tokenize_span(
+                        &string[start..i],
+                        &mut toks,
+                        &mut has_special,
+                        with_special,
+                    );
                 }
                 if uc == ' ' {
                     if let Some(l) = toks.last_mut() {
@@ -345,7 +361,13 @@ impl Tokenizer {
         toks
     }
 
-    fn tokenize_span(&self, span: &str, toks: &mut Vec<TokenC>, has_special: &mut bool, with_special: bool) {
+    fn tokenize_span(
+        &self,
+        span: &str,
+        toks: &mut Vec<TokenC>,
+        has_special: &mut bool,
+        with_special: bool,
+    ) {
         let (hit, sp) = self.try_specials_and_cache(span, toks, with_special);
         if hit {
             *has_special |= sp;
@@ -356,10 +378,17 @@ impl Tokenizer {
         let mut suffixes: Vec<&str> = Vec::new();
         let rest = self.split_affixes(span, &mut prefixes, &mut suffixes, with_special);
         self.attach_tokens(toks, rest, &prefixes, &suffixes, has_special, with_special);
-        let cache_len = self.cache.read().expect("lock").len();
-        if !*has_special && toks.len() > orig && cache_len < self.max_cache_size {
-            let lexes: Arc<[Arc<LexemeC>]> = toks[orig..].iter().map(|t| t.lex.clone()).collect();
-            self.cache.write().expect("lock").insert(span.to_string(), lexes);
+        if !*has_special && toks.len() > orig {
+            let shard = &self.cache[crate::fxhash::shard_of(crate::fxhash::hash_str(span))];
+            if let Ok(mut c) = shard.try_write()
+                && c.len() < self.max_cache_size / crate::fxhash::SHARDS
+            {
+                let lexes: Arc<[(Arc<LexemeC>, usize)]> = toks[orig..]
+                    .iter()
+                    .map(|t| (t.lex.clone(), t.byte_len))
+                    .collect();
+                c.insert(span.to_string(), lexes);
+            }
         }
     }
 
@@ -467,7 +496,9 @@ impl Tokenizer {
             if let Some(pats) = self.special_matcher.get(&toks[i].lex.orth) {
                 for p in pats {
                     let end = i + p.len();
-                    if end <= toks.len() && toks[i..end].iter().zip(p).all(|(t, &o)| t.lex.orth == o) {
+                    if end <= toks.len()
+                        && toks[i..end].iter().zip(p).all(|(t, &o)| t.lex.orth == o)
+                    {
                         matches.push((i, end));
                     }
                 }
@@ -491,7 +522,8 @@ impl Tokenizer {
             seen.extend(s..e);
         }
         filtered.sort_by_key(|m| m.0);
-        let span_data: HashMap<usize, (usize, usize)> = filtered.iter().map(|&(s, e)| (s, (s, e))).collect();
+        let span_data: HashMap<usize, (usize, usize)> =
+            filtered.iter().map(|&(s, e)| (s, (s, e))).collect();
         let mut out: Vec<TokenC> = Vec::with_capacity(toks.len());
         let mut i = 0;
         while i < toks.len() {
@@ -533,7 +565,10 @@ impl Tokenizer {
         #[cfg(feature = "rayon")]
         {
             use rayon::prelude::*;
-            texts.par_iter().map(|t| self.tokenize(t.as_ref())).collect()
+            texts
+                .par_iter()
+                .map(|t| self.tokenize(t.as_ref()))
+                .collect()
         }
         #[cfg(not(feature = "rayon"))]
         {
@@ -580,7 +615,10 @@ impl Tokenizer {
             out.extend(prefixes);
             if let Some(sp) = self.specials.get(sub) {
                 for t in sp.iter() {
-                    out.push(("SPECIAL".into(), self.vocab.strings.get_or_empty(t.lex.orth).to_string()));
+                    out.push((
+                        "SPECIAL".into(),
+                        self.vocab.strings.get_or_empty(t.lex.orth).to_string(),
+                    ));
                 }
             } else if self.token_match(sub) {
                 out.push(("TOKEN_MATCH".into(), sub.to_string()));

@@ -125,14 +125,45 @@ pub fn is_bracket(text: &str) -> bool {
 pub fn is_quote(text: &str) -> bool {
     matches!(
         text,
-        "\"" | "'" | "`" | "«" | "»" | "‘" | "’" | "‚" | "‛" | "“" | "”" | "„" | "‟" | "‹" | "›" | "❮" | "❯" | "''" | "``"
+        "\"" | "'"
+            | "`"
+            | "«"
+            | "»"
+            | "‘"
+            | "’"
+            | "‚"
+            | "‛"
+            | "“"
+            | "”"
+            | "„"
+            | "‟"
+            | "‹"
+            | "›"
+            | "❮"
+            | "❯"
+            | "''"
+            | "``"
     )
 }
 /// Left punctuation.
 pub fn is_left_punct(text: &str) -> bool {
     matches!(
         text,
-        "(" | "[" | "{" | "<" | "\"" | "'" | "«" | "‘" | "‚" | "‛" | "“" | "„" | "‟" | "‹" | "❮" | "``"
+        "(" | "["
+            | "{"
+            | "<"
+            | "\""
+            | "'"
+            | "«"
+            | "‘"
+            | "‚"
+            | "‛"
+            | "“"
+            | "„"
+            | "‟"
+            | "‹"
+            | "❮"
+            | "``"
     )
 }
 /// Right punctuation.
@@ -148,7 +179,8 @@ pub fn is_currency(text: &str) -> bool {
 }
 
 static EMAIL_RE: LazyLock<fancy_regex::Regex> = LazyLock::new(|| {
-    crate::regex_compat::compile(r"^([a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)").expect("email regex")
+    crate::regex_compat::compile(r"^([a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+)")
+        .expect("email regex")
 });
 
 /// spaCy's `like_email`.

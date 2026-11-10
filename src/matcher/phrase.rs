@@ -26,7 +26,12 @@ pub struct PhraseMatcher {
 
 impl std::fmt::Debug for PhraseMatcher {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "PhraseMatcher(attr={}, {} keys)", self.attr, self.keys.len())
+        write!(
+            f,
+            "PhraseMatcher(attr={}, {} keys)",
+            self.attr,
+            self.keys.len()
+        )
     }
 }
 
@@ -109,7 +114,12 @@ impl PhraseMatcher {
     }
 
     /// Add with an `on_match` callback (run by [`PhraseMatcher::apply`]).
-    pub fn add_with_callback(&mut self, key: &str, docs: &[Doc], on_match: super::OnMatch) -> Result<(), Error> {
+    pub fn add_with_callback(
+        &mut self,
+        key: &str,
+        docs: &[Doc],
+        on_match: super::OnMatch,
+    ) -> Result<(), Error> {
         self.add(key, docs)?;
         self.callbacks.insert(self.vocab.strings.add(key), on_match);
         Ok(())
@@ -142,7 +152,9 @@ impl PhraseMatcher {
     pub fn remove(&mut self, key: &str) -> Result<(), Error> {
         let id = self.vocab.strings.add(key);
         if !self.keys.contains(&id) {
-            return Err(Error::Value(format!("[E175] Can't remove rule for unknown match pattern ID: {key}")));
+            return Err(Error::Value(format!(
+                "[E175] Can't remove rule for unknown match pattern ID: {key}"
+            )));
         }
         for n in self.nodes.iter_mut() {
             n.terminal.retain(|k| *k != id);
@@ -155,7 +167,10 @@ impl PhraseMatcher {
 
     fn find_range(&self, doc: &Doc, start_idx: usize, end_idx: usize) -> Vec<Match> {
         let mut out = Vec::new();
-        let vals: Vec<u64> = doc.tokens[start_idx..end_idx].iter().map(|t| token_attr(t, self.attr)).collect();
+        let vals: Vec<u64> = doc.tokens[start_idx..end_idx]
+            .iter()
+            .map(|t| token_attr(t, self.attr))
+            .collect();
         for s in 0..vals.len() {
             let mut cur = 0;
             for (k, v) in vals[s..].iter().enumerate() {

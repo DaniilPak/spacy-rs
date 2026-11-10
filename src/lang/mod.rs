@@ -97,7 +97,8 @@ pub fn load(code: &str) -> Option<Arc<LangData>> {
     if let Some(d) = c.get(code) {
         return Some(d.clone());
     }
-    let d: LangData = serde_json::from_str(raw(code)?).expect("bundled language data is valid JSON");
+    let d: LangData =
+        serde_json::from_str(raw(code)?).expect("bundled language data is valid JSON");
     let d = Arc::new(d);
     c.insert(code.to_string(), d.clone());
     Some(d)

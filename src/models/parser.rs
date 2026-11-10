@@ -77,7 +77,11 @@ impl<'a> State<'a> {
         if b_i >= self.length { -1 } else { b_i }
     }
     fn tok(&self, i: i32) -> Option<&TokenC> {
-        if i < 0 || i >= self.length { None } else { Some(&self.sent[i as usize]) }
+        if i < 0 || i >= self.length {
+            None
+        } else {
+            Some(&self.sent[i as usize])
+        }
     }
     fn e(&self) -> i32 {
         self.ents.last().map_or(-1, |e| e.start)
@@ -86,7 +90,9 @@ impl<'a> State<'a> {
         if idx < 1 {
             return -1;
         }
-        let Some(arcs) = map.get(&head) else { return -1 };
+        let Some(arcs) = map.get(&head) else {
+            return -1;
+        };
         let mut ci = 0;
         for a in arcs.iter().rev() {
             if a.child != -1 {
@@ -162,7 +168,11 @@ impl<'a> State<'a> {
         }
     }
     fn del_arc(&mut self, h: i32, c: i32) {
-        let map = if h > c { &mut self.left_arcs } else { &mut self.right_arcs };
+        let map = if h > c {
+            &mut self.left_arcs
+        } else {
+            &mut self.right_arcs
+        };
         let Some(arcs) = map.get_mut(&h) else { return };
         let Some(last) = arcs.last() else { return };
         if last.head == h && last.child == c {
@@ -193,7 +203,11 @@ impl<'a> State<'a> {
     }
     fn open_ent(&mut self, label: u64) {
         let start = self.b(0);
-        self.ents.push(EntC { start, end: -1, label });
+        self.ents.push(EntC {
+            start,
+            end: -1,
+            label,
+        });
     }
     fn close_ent(&mut self) {
         let b0 = self.b(0);
@@ -205,7 +219,11 @@ impl<'a> State<'a> {
         let mut out = Vec::new();
         for m in [&self.left_arcs, &self.right_arcs] {
             for arcs in m.values() {
-                out.extend(arcs.iter().filter(|a| a.head != -1 && a.child != -1).copied());
+                out.extend(
+                    arcs.iter()
+                        .filter(|a| a.head != -1 && a.child != -1)
+                        .copied(),
+                );
             }
         }
         out
@@ -220,7 +238,11 @@ impl<'a> State<'a> {
             3 => {
                 ids[0] = self.b(0);
                 ids[1] = if self.entity_is_open() { self.e() } else { -1 };
-                ids[2] = if ids[0] == -1 || ids[1] == -1 { -1 } else { ids[0] - 1 };
+                ids[2] = if ids[0] == -1 || ids[1] == -1 {
+                    -1
+                } else {
+                    ids[0] - 1
+                };
             }
             8 => {
                 ids[0] = self.b(0);
@@ -322,9 +344,16 @@ pub struct Moves {
 impl Moves {
     /// Build from the `moves` JSON (`{"0": {"label": freq}, ...}`), replicating
     /// `TransitionSystem.initialize_actions` ordering.
-    pub fn from_json(kind: StateType, moves_json: &str, strings: &crate::StringStore) -> Result<Self, Error> {
-        let v: serde_json::Value = serde_json::from_str(moves_json).map_err(|e| Error::Format(format!("moves: {e}")))?;
-        let obj = v.as_object().ok_or_else(|| Error::Format("moves must be an object".into()))?;
+    pub fn from_json(
+        kind: StateType,
+        moves_json: &str,
+        strings: &crate::StringStore,
+    ) -> Result<Self, Error> {
+        let v: serde_json::Value =
+            serde_json::from_str(moves_json).map_err(|e| Error::Format(format!("moves: {e}")))?;
+        let obj = v
+            .as_object()
+            .ok_or_else(|| Error::Format("moves must be an object".into()))?;
         let mut keys: Vec<&String> = obj.keys().collect();
         keys.sort();
         let mut m = Moves {
@@ -336,10 +365,16 @@ impl Moves {
         let mut added: Vec<(i64, String)> = Vec::new();
         let mut added_actions: HashMap<String, Vec<u8>> = HashMap::new();
         for k in keys {
-            let action: u8 = k.parse().map_err(|_| Error::Format("bad action key".into()))?;
+            let action: u8 = k
+                .parse()
+                .map_err(|_| Error::Format("bad action key".into()))?;
             let mut labels: Vec<(i64, String)> = obj[k]
                 .as_object()
-                .map(|o| o.iter().map(|(l, f)| (f.as_i64().unwrap_or(0), l.clone())).collect())
+                .map(|o| {
+                    o.iter()
+                        .map(|(l, f)| (f.as_i64().unwrap_or(0), l.clone()))
+                        .collect()
+                })
                 .unwrap_or_default();
             labels.sort();
             labels.reverse();
@@ -371,7 +406,10 @@ impl Moves {
             return;
         }
         self.label_names.insert(id, label.to_string());
-        self.c.push(Transition { mv: action, label: id });
+        self.c.push(Transition {
+            mv: action,
+            label: id,
+        });
     }
 
     /// Number of classes.
@@ -390,7 +428,11 @@ impl Moves {
         match self.kind {
             StateType::Parser => {
                 let n = ["S", "D", "L", "R", "B"][t.mv as usize];
-                if l.is_empty() { n.to_string() } else { format!("{n}-{l}") }
+                if l.is_empty() {
+                    n.to_string()
+                } else {
+                    format!("{n}-{l}")
+                }
             }
             StateType::Ner => match t.mv {
                 OUT => "O".into(),
@@ -607,10 +649,9 @@ impl TransitionModel {
         match &self.tok2vec {
             Tok2VecSource::Own(t) => Ok(t.forward(doc)),
             Tok2VecSource::Listener => {
-                let (w, t) = doc
-                    .tensor
-                    .as_ref()
-                    .ok_or_else(|| Error::Value("parser needs doc.tensor; add the tok2vec component first".into()))?;
+                let (w, t) = doc.tensor.as_ref().ok_or_else(|| {
+                    Error::Value("parser needs doc.tensor; add the tok2vec component first".into())
+                })?;
                 if *w != self.proj.n_in {
                     return Err(Error::Value("tensor width does not match parser".into()));
                 }
@@ -751,15 +792,17 @@ fn set_lr_kids_and_edges(tokens: &mut [TokenC], loop_count: usize) -> bool {
             tokens[h].l_edge = cl;
         }
     }
-    let sent_starts: std::collections::HashSet<usize> =
-        (0..n).filter(|&i| tokens[i].head == 0).map(|i| tokens[i].l_edge).collect();
+    let sent_starts: std::collections::HashSet<usize> = (0..n)
+        .filter(|&i| tokens[i].head == 0)
+        .map(|i| tokens[i].l_edge)
+        .collect();
     let mut cur_start = 0usize;
     for i in 0..n {
         if (i > 0 && sent_starts.contains(&i)) || i == n - 1 {
             let cur_end = i;
             for j in cur_start..cur_end {
                 let h = tokens[j].head + j as isize;
-                if h < cur_start as isize || h >= cur_end as isize + 1 {
+                if h < cur_start as isize || h > cur_end as isize {
                     return false;
                 }
             }

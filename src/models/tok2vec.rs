@@ -39,7 +39,10 @@ impl Tok2Vec {
             .collect::<Result<_, _>>()?;
         let mut embeds: Vec<(usize, HashEmbed)> = Vec::new();
         for n in nodes.iter().filter(|n| n.name == "hashembed") {
-            let col = n.attr("column").and_then(|c| c.as_u64()).unwrap_or(embeds.len() as u64) as usize;
+            let col = n
+                .attr("column")
+                .and_then(|c| c.as_u64())
+                .unwrap_or(embeds.len() as u64) as usize;
             embeds.push((col, HashEmbed::from_node(n)?));
         }
         embeds.sort_by_key(|(c, _)| *c);

@@ -18,11 +18,15 @@ use crate::doc::Doc;
 use crate::lang::{LexAttrConfig, SpecialToken};
 use crate::language::{Language, Pipe};
 use crate::pipeline::lemmatizer::{LemmaTables, Lemmatizer, LemmatizerMode};
-use crate::pipeline::{AttributeRuler, AttributeRulerPattern, EntityRuler, RulerPattern, Sentencizer};
+use crate::pipeline::{
+    AttributeRuler, AttributeRulerPattern, EntityRuler, RulerPattern, Sentencizer,
+};
 use crate::tokenizer::{Tokenizer, TokenizerConfig};
 use crate::vocab::Vocab;
 use msgpack::{as_str, get, int_key, to_json};
-use parser::{DependencyParser, EntityRecognizer, Moves, StateType, Tok2VecSource, TransitionModel};
+use parser::{
+    DependencyParser, EntityRecognizer, Moves, StateType, Tok2VecSource, TransitionModel,
+};
 use rmpv::Value;
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
@@ -66,7 +70,10 @@ impl Config {
                 cur = l[1..l.len() - 1].to_string();
                 c.sections.entry(cur.clone()).or_default();
             } else if let Some((k, v)) = l.split_once('=') {
-                c.sections.entry(cur.clone()).or_default().insert(k.trim().to_string(), v.trim().to_string());
+                c.sections
+                    .entry(cur.clone())
+                    .or_default()
+                    .insert(k.trim().to_string(), v.trim().to_string());
             }
         }
         c
@@ -78,19 +85,29 @@ impl Config {
     /// A value parsed as JSON (strings unquoted).
     pub fn get_json(&self, section: &str, key: &str) -> Option<serde_json::Value> {
         let raw = self.get(section, key)?;
-        serde_json::from_str(raw).ok().or_else(|| Some(serde_json::Value::String(raw.to_string())))
+        serde_json::from_str(raw)
+            .ok()
+            .or_else(|| Some(serde_json::Value::String(raw.to_string())))
     }
     /// A list of strings.
     pub fn get_list(&self, section: &str, key: &str) -> Vec<String> {
         match self.get_json(section, key) {
-            Some(serde_json::Value::Array(a)) => a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect(),
+            Some(serde_json::Value::Array(a)) => a
+                .iter()
+                .filter_map(|v| v.as_str().map(str::to_string))
+                .collect(),
             _ => Vec::new(),
         }
     }
 }
 
 fn read(path: &Path) -> Result<Vec<u8>, Error> {
-    std::fs::read(path).map_err(|e| Error::Io(std::io::Error::new(e.kind(), format!("{}: {e}", path.display()))))
+    std::fs::read(path).map_err(|e| {
+        Error::Io(std::io::Error::new(
+            e.kind(),
+            format!("{}: {e}", path.display()),
+        ))
+    })
 }
 
 /// Resolve a pipeline path: either the data directory (with `config.cfg`) or
@@ -106,10 +123,17 @@ fn resolve_dir(path: &Path) -> Result<PathBuf, Error> {
             }
         }
     }
-    Err(Error::Format(format!("{} does not contain a spaCy pipeline (config.cfg)", path.display())))
+    Err(Error::Format(format!(
+        "{} does not contain a spaCy pipeline (config.cfg)",
+        path.display()
+    )))
 }
 
-fn load_tokenizer(vocab: &Arc<Vocab>, dir: &Path, lang_rules: Option<&crate::lang::LangData>) -> Result<Tokenizer, Error> {
+fn load_tokenizer(
+    vocab: &Arc<Vocab>,
+    dir: &Path,
+    lang_rules: Option<&crate::lang::LangData>,
+) -> Result<Tokenizer, Error> {
     let p = dir.join("tokenizer");
     if !p.exists() {
         let d = lang_rules.ok_or_else(|| Error::Format("no tokenizer data".into()))?;
@@ -129,7 +153,9 @@ fn load_tokenizer(vocab: &Arc<Vocab>, dir: &Path, lang_rules: Option<&crate::lan
                     for (ak, av) in attrs {
                         let id = match ak {
                             Value::Integer(i) => i.as_u64().unwrap_or(0),
-                            other => crate::attrs::attr_id(as_str(other).unwrap_or("")).unwrap_or(0),
+                            other => {
+                                crate::attrs::attr_id(as_str(other).unwrap_or("")).unwrap_or(0)
+                            }
                         };
                         match id {
                             crate::attrs::ORTH => orth = as_str(av).unwrap_or("").to_string(),
@@ -150,14 +176,18 @@ fn load_tokenizer(vocab: &Arc<Vocab>, dir: &Path, lang_rules: Option<&crate::lan
         token_match: s("token_match"),
         url_match: s("url_match"),
         rules,
-        faster_heuristics: get(&v, "faster_heuristics").and_then(|b| b.as_bool()).unwrap_or(true),
+        faster_heuristics: get(&v, "faster_heuristics")
+            .and_then(|b| b.as_bool())
+            .unwrap_or(true),
     };
     Tokenizer::new(vocab.clone(), cfg)
 }
 
 fn load_transition(dir: &Path, kind: StateType, vocab: &Vocab) -> Result<TransitionModel, Error> {
     let nodes = msgpack::load_nodes(&read(&dir.join("model"))?)?;
-    let root = nodes.first().ok_or_else(|| Error::Format("empty parser model".into()))?;
+    let root = nodes
+        .first()
+        .ok_or_else(|| Error::Format("empty parser model".into()))?;
     let rf = |name: &str| -> Result<usize, Error> {
         root.refs
             .iter()
@@ -182,10 +212,16 @@ fn load_transition(dir: &Path, kind: StateType, vocab: &Vocab) -> Result<Transit
         Tok2VecSource::Listener
     };
     let mv = msgpack::decode(&read(&dir.join("moves"))?)?;
-    let moves_json = get(&mv, "moves").and_then(as_str).ok_or_else(|| Error::Format("moves file without moves".into()))?;
+    let moves_json = get(&mv, "moves")
+        .and_then(as_str)
+        .ok_or_else(|| Error::Format("moves file without moves".into()))?;
     let moves = Moves::from_json(kind, moves_json, &vocab.strings)?;
     if moves.len() != upper.n_out {
-        return Err(Error::Format(format!("{} moves but output layer has {} classes", moves.len(), upper.n_out)));
+        return Err(Error::Format(format!(
+            "{} moves but output layer has {} classes",
+            moves.len(),
+            upper.n_out
+        )));
     }
     Ok(TransitionModel {
         tok2vec,
@@ -201,7 +237,10 @@ fn load_lemma_tables(path: &Path) -> Result<LemmaTables, Error> {
     let mut t = LemmaTables::default();
     let map = |name: &str| -> Vec<(u64, &Value)> {
         match get(&v, name) {
-            Some(Value::Map(m)) => m.iter().filter_map(|(k, v)| Some((int_key(k)?, v))).collect(),
+            Some(Value::Map(m)) => m
+                .iter()
+                .filter_map(|(k, v)| Some((int_key(k)?, v)))
+                .collect(),
             _ => Vec::new(),
         }
     };
@@ -217,7 +256,10 @@ fn load_lemma_tables(path: &Path) -> Result<LemmaTables, Error> {
             .flatten()
             .filter_map(|p| {
                 let p = p.as_array()?;
-                Some((as_str(p.first()?)?.to_string(), as_str(p.get(1)?)?.to_string()))
+                Some((
+                    as_str(p.first()?)?.to_string(),
+                    as_str(p.get(1)?)?.to_string(),
+                ))
             })
             .collect();
         t.rules.insert(k, rs);
@@ -226,14 +268,24 @@ fn load_lemma_tables(path: &Path) -> Result<LemmaTables, Error> {
         let mut h = HashMap::new();
         if let Value::Map(m) = val {
             for (f, ls) in m {
-                let ls = ls.as_array().into_iter().flatten().filter_map(|x| as_str(x).map(str::to_string)).collect();
+                let ls = ls
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|x| as_str(x).map(str::to_string))
+                    .collect();
                 h.insert(as_str(f).unwrap_or("").to_string(), ls);
             }
         }
         t.exc.insert(k, h);
     }
     for (k, val) in map("lemma_index") {
-        let set = val.as_array().into_iter().flatten().filter_map(|x| as_str(x).map(str::to_string)).collect();
+        let set = val
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|x| as_str(x).map(str::to_string))
+            .collect();
         t.index.insert(k, set);
     }
     Ok(t)
@@ -261,8 +313,10 @@ pub fn load_with(path: impl AsRef<Path>, exclude: &[&str]) -> Result<Language, E
     if lk.exists() {
         let v = msgpack::decode(&read(&lk)?)?;
         if let Some(Value::Map(m)) = get(&v, "lexeme_norm") {
-            let table: HashMap<u64, String> =
-                m.iter().filter_map(|(k, v)| Some((int_key(k)?, as_str(v)?.to_string()))).collect();
+            let table: HashMap<u64, String> = m
+                .iter()
+                .filter_map(|(k, v)| Some((int_key(k)?, as_str(v)?.to_string())))
+                .collect();
             vocab.add_norm_table_ids(table);
         }
     }
@@ -282,7 +336,12 @@ pub fn load_with(path: impl AsRef<Path>, exclude: &[&str]) -> Result<Language, E
         match factory.as_str() {
             "tok2vec" => {
                 let nodes = msgpack::load_nodes(&read(&cdir.join("model"))?)?;
-                nlp.add_pipe(name, Tok2VecPipe { model: Arc::new(Tok2Vec::from_nodes(&nodes)?) });
+                nlp.add_pipe(
+                    name,
+                    Tok2VecPipe {
+                        model: Arc::new(Tok2Vec::from_nodes(&nodes)?),
+                    },
+                );
             }
             "tagger" => {
                 let nodes = msgpack::load_nodes(&read(&cdir.join("model"))?)?;
@@ -294,10 +353,16 @@ pub fn load_with(path: impl AsRef<Path>, exclude: &[&str]) -> Result<Language, E
                     .map_err(|e| Error::Format(format!("tagger cfg: {e}")))?;
                 let labels = c["labels"]
                     .as_array()
-                    .map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect())
+                    .map(|a| {
+                        a.iter()
+                            .filter_map(|x| x.as_str().map(str::to_string))
+                            .collect()
+                    })
                     .unwrap_or_default();
                 if nodes.iter().any(|n| n.name == "hashembed") {
-                    return Err(Error::Format("taggers with their own tok2vec are not supported yet".into()));
+                    return Err(Error::Format(
+                        "taggers with their own tok2vec are not supported yet".into(),
+                    ));
                 }
                 nlp.add_pipe(
                     name,
@@ -321,17 +386,25 @@ pub fn load_with(path: impl AsRef<Path>, exclude: &[&str]) -> Result<Language, E
                 let p = cdir.join("patterns");
                 if p.exists() {
                     let v = to_json(&msgpack::decode(&read(&p)?)?);
-                    let pats: Vec<AttributeRulerPattern> =
-                        serde_json::from_value(v).map_err(|e| Error::Format(format!("attribute_ruler patterns: {e}")))?;
+                    let pats: Vec<AttributeRulerPattern> = serde_json::from_value(v)
+                        .map_err(|e| Error::Format(format!("attribute_ruler patterns: {e}")))?;
                     ar.add_patterns(&pats)?;
                 }
                 nlp.add_pipe(name, ar);
             }
             "lemmatizer" => {
-                let mode = match cfg.get_json(&sec, "mode").and_then(|v| v.as_str().map(str::to_string)).as_deref() {
+                let mode = match cfg
+                    .get_json(&sec, "mode")
+                    .and_then(|v| v.as_str().map(str::to_string))
+                    .as_deref()
+                {
                     Some("lookup") => LemmatizerMode::Lookup,
                     Some("rule") | None => LemmatizerMode::Rule,
-                    Some(other) => return Err(Error::Format(format!("unsupported lemmatizer mode {other}"))),
+                    Some(other) => {
+                        return Err(Error::Format(format!(
+                            "unsupported lemmatizer mode {other}"
+                        )));
+                    }
                 };
                 let tables = load_lemma_tables(&cdir.join("lookups").join("lookups.bin"))?;
                 let mut l = Lemmatizer::with_tables(mode, Arc::new(tables), lang == "en");

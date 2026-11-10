@@ -16,7 +16,7 @@ pub const OOV_RANK: u64 = 0xffff_ffff_ffff_ffff;
 pub struct Vocab {
     /// Interned strings.
     pub strings: StringStore,
-    lexemes: RwLock<HashMap<u64, Arc<LexemeC>>>,
+    lexemes: [RwLock<crate::fxhash::FxHashMap<u64, Arc<LexemeC>>>; crate::fxhash::SHARDS],
     lang: String,
     lang_id: u64,
     lex_attrs: LexAttrConfig,
@@ -36,7 +36,7 @@ impl Vocab {
         let lang_id = strings.add(lang);
         Vocab {
             strings,
-            lexemes: RwLock::new(HashMap::new()),
+            lexemes: Default::default(),
             lang: lang.to_string(),
             lang_id,
             lex_attrs,
@@ -56,7 +56,10 @@ impl Vocab {
 
     /// Number of cached lexemes.
     pub fn len(&self) -> usize {
-        self.lexemes.read().expect("lock").len()
+        self.lexemes
+            .iter()
+            .map(|m| m.read().expect("lock").len())
+            .sum()
     }
 
     /// Whether no lexemes are cached.
@@ -72,23 +75,34 @@ impl Vocab {
     /// Prepend a `lexeme_norm` lookup table (as loaded from a trained pipeline).
     /// Lexemes already created are rebuilt lazily on next access.
     pub fn add_norm_table(&self, table: HashMap<String, String>) {
-        self.add_norm_table_ids(table.into_iter().map(|(k, v)| (crate::strings::get_string_id(&k), v)).collect());
+        self.add_norm_table_ids(
+            table
+                .into_iter()
+                .map(|(k, v)| (crate::strings::get_string_id(&k), v))
+                .collect(),
+        );
     }
 
     /// Like [`Vocab::add_norm_table`] with keys already hashed (spaCy `Lookups` format).
     pub fn add_norm_table_ids(&self, table: HashMap<u64, String>) {
-        self.norm_tables.write().expect("lock").insert(0, Arc::new(table));
-        self.lexemes.write().expect("lock").clear();
+        self.norm_tables
+            .write()
+            .expect("lock")
+            .insert(0, Arc::new(table));
+        for m in &self.lexemes {
+            m.write().expect("lock").clear();
+        }
     }
 
     /// Get or create the lexeme for a string.
     pub fn get(&self, s: &str) -> Arc<LexemeC> {
         let orth = crate::strings::get_string_id(s);
-        if let Some(l) = self.lexemes.read().expect("lock").get(&orth) {
+        let shard = &self.lexemes[crate::fxhash::shard_of(orth)];
+        if let Some(l) = shard.read().expect("lock").get(&orth) {
             return l.clone();
         }
         let lex = Arc::new(self.make_lexeme(s));
-        self.lexemes
+        shard
             .write()
             .expect("lock")
             .entry(orth)
@@ -98,7 +112,11 @@ impl Vocab {
 
     /// Get the lexeme for an ID if it exists.
     pub fn get_by_orth(&self, orth: u64) -> Option<Arc<LexemeC>> {
-        if let Some(l) = self.lexemes.read().expect("lock").get(&orth) {
+        if let Some(l) = self.lexemes[crate::fxhash::shard_of(orth)]
+            .read()
+            .expect("lock")
+            .get(&orth)
+        {
             return Some(l.clone());
         }
         let s = self.strings.get(orth)?.to_string();
@@ -109,7 +127,10 @@ impl Vocab {
     pub fn set_lexeme_flag(&self, s: &str, flag: u64, value: bool) {
         let mut lex = (*self.get(s)).clone();
         lex.set_flag(flag, value);
-        self.lexemes.write().expect("lock").insert(lex.orth, Arc::new(lex));
+        self.lexemes[crate::fxhash::shard_of(lex.orth)]
+            .write()
+            .expect("lock")
+            .insert(lex.orth, Arc::new(lex));
     }
 
     /// The lexeme NORM for a string (lookup tables, then lowercase).

@@ -53,15 +53,23 @@ impl AttributeRuler {
     }
 
     /// Add one rule (`AttributeRuler.add`).
-    pub fn add(&mut self, patterns: &[Value], attrs: &serde_json::Map<String, Value>, index: i64) -> Result<(), Error> {
+    pub fn add(
+        &mut self,
+        patterns: &[Value],
+        attrs: &serde_json::Map<String, Value>,
+        index: i64,
+    ) -> Result<(), Error> {
         let key = self.attrs.len().to_string();
         self.matcher.add(&key, patterns, None)?;
         let mut norm = Vec::new();
         for (k, v) in attrs {
             let a = attr_id(k).ok_or_else(|| Error::Value(format!("unknown attribute {k}")))?;
             let val = match (a, v) {
-                (MORPH, Value::String(s)) => self.vocab.strings.add(&crate::morphology::normalize(s)),
-                (POS, Value::String(s)) => pos::from_str(&s.to_uppercase()).ok_or_else(|| Error::Value(format!("bad POS {s}")))?,
+                (MORPH, Value::String(s)) => {
+                    self.vocab.strings.add(&crate::morphology::normalize(s))
+                }
+                (POS, Value::String(s)) => pos::from_str(&s.to_uppercase())
+                    .ok_or_else(|| Error::Value(format!("bad POS {s}")))?,
                 (_, Value::String(s)) => self.vocab.strings.add(s),
                 (_, Value::Bool(b)) => *b as u64,
                 (_, Value::Number(n)) => n.as_u64().unwrap_or(0),
@@ -95,7 +103,14 @@ impl Pipe for AttributeRuler {
             .matcher
             .find_allow_missing(doc)
             .into_iter()
-            .map(|m| (st.get_or_empty(m.match_id).parse::<usize>().unwrap_or(0), m.match_id, m.start, m.end))
+            .map(|m| {
+                (
+                    st.get_or_empty(m.match_id).parse::<usize>().unwrap_or(0),
+                    m.match_id,
+                    m.start,
+                    m.end,
+                )
+            })
             .collect();
         matches.sort();
         for (attr_idx, _, start, end) in matches {
@@ -103,7 +118,9 @@ impl Pipe for AttributeRuler {
             let idx = self.indices[attr_idx];
             let pos = if idx < 0 { len + idx } else { idx };
             if pos < 0 || pos >= len {
-                return Err(Error::Value(format!("[E1001] attribute ruler index {idx} out of range for span {start}..{end}")));
+                return Err(Error::Value(format!(
+                    "[E1001] attribute ruler index {idx} out of range for span {start}..{end}"
+                )));
             }
             let t = &mut doc.tokens[start + pos as usize];
             for &(a, v) in &self.attrs[attr_idx].0 {

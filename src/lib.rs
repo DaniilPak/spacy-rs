@@ -1,8 +1,17 @@
 #![doc = include_str!("../README.md")]
 #![warn(missing_docs)]
+#![allow(unknown_lints)]
+#![allow(
+    clippy::needless_range_loop,
+    clippy::chunks_exact_to_as_chunks,
+    clippy::type_complexity
+)]
 
 pub mod attrs;
+pub mod displacy;
 pub mod doc;
+pub mod docbin;
+pub mod fxhash;
 pub mod lang;
 pub mod language;
 pub mod lexeme;
@@ -18,7 +27,8 @@ pub mod uchar;
 mod unicode_tables;
 pub mod vocab;
 
-pub use doc::{Alignment, Doc, Span, SpanC, Token, TokenC};
+pub use doc::{Alignment, Doc, EntsDefault, Span, SpanC, Token, TokenC};
+pub use docbin::DocBin;
 pub use language::{Language, Pipe, blank};
 pub use models::{load, load_with};
 pub use strings::{StringStore, hash_string};

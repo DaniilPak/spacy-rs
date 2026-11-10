@@ -12,7 +12,7 @@ documentation = "https://docs.rs/spacy-rs"
 readme = "README.md"
 keywords = ["nlp", "spacy", "tokenizer", "ner", "linguistics"]
 categories = ["text-processing", "science"]
-exclude = ["tests/fixtures/*.json.large", "tools/__pycache__", "/.github"]
+exclude = ["/tests/fixtures", "/tests/models", "/tools/__pycache__", "/.github", "/target"]
 
 [lib]
 name = "spacy"
@@ -22,6 +22,7 @@ fancy-regex = "0.20"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 rmpv = "1.3"
+matrixmultiply = "0.3"
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 rayon = { version = "1.12", optional = true }
 
