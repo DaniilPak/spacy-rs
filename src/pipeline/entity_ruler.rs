@@ -148,6 +148,6 @@ impl Pipe for EntityRuler {
         }
         entities.extend(new_entities);
         entities.sort_by_key(|e| e.start);
-        doc.set_ents(&entities, false)
+        doc.set_ents(&entities)
     }
 }

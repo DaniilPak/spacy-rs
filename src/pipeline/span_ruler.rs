@@ -130,7 +130,7 @@ impl Pipe for SpanRuler {
             let mut spans = if self.overwrite { Vec::new() } else { doc.ent_spans() };
             spans.extend(matches);
             let spans = filter_spans(&spans);
-            doc.set_ents(&spans, false)?;
+            doc.set_ents(&spans)?;
         }
         Ok(())
     }

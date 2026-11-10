@@ -265,9 +265,11 @@ impl Tokenizer {
         // character offsets
         let mut chars = 0usize;
         let mut last_byte = 0usize;
-        for t in toks.iter_mut() {
+        for (i, t) in toks.iter_mut().enumerate() {
             chars += crate::uchar::char_len(&text[last_byte..t.byte_idx]);
             t.idx = chars;
+            t.l_edge = i;
+            t.r_edge = i;
             last_byte = t.byte_idx;
         }
         Doc::from_parts(self.vocab.clone(), text.to_string(), toks)

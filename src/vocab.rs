@@ -20,7 +20,7 @@ pub struct Vocab {
     lang: String,
     lang_id: u64,
     lex_attrs: LexAttrConfig,
-    norm_tables: RwLock<Vec<Arc<HashMap<String, String>>>>,
+    norm_tables: RwLock<Vec<Arc<HashMap<u64, String>>>>,
 }
 
 impl std::fmt::Debug for Vocab {
@@ -40,7 +40,12 @@ impl Vocab {
             lang: lang.to_string(),
             lang_id,
             lex_attrs,
-            norm_tables: RwLock::new(vec![Arc::new(crate::lang::base_norms().clone())]),
+            norm_tables: RwLock::new(vec![Arc::new(
+                crate::lang::base_norms()
+                    .iter()
+                    .map(|(k, v)| (crate::strings::get_string_id(k), v.clone()))
+                    .collect(),
+            )]),
         }
     }
 
@@ -67,6 +72,11 @@ impl Vocab {
     /// Prepend a `lexeme_norm` lookup table (as loaded from a trained pipeline).
     /// Lexemes already created are rebuilt lazily on next access.
     pub fn add_norm_table(&self, table: HashMap<String, String>) {
+        self.add_norm_table_ids(table.into_iter().map(|(k, v)| (crate::strings::get_string_id(&k), v)).collect());
+    }
+
+    /// Like [`Vocab::add_norm_table`] with keys already hashed (spaCy `Lookups` format).
+    pub fn add_norm_table_ids(&self, table: HashMap<u64, String>) {
         self.norm_tables.write().expect("lock").insert(0, Arc::new(table));
         self.lexemes.write().expect("lock").clear();
     }
@@ -104,8 +114,9 @@ impl Vocab {
 
     /// The lexeme NORM for a string (lookup tables, then lowercase).
     pub fn norm_of(&self, s: &str) -> String {
+        let id = crate::strings::get_string_id(s);
         for t in self.norm_tables.read().expect("lock").iter() {
-            if let Some(n) = t.get(s) {
+            if let Some(n) = t.get(&id) {
                 return n.clone();
             }
         }

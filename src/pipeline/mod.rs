@@ -1,10 +1,12 @@
 //! Rule-based pipeline components.
 
+pub mod attribute_ruler;
 pub mod entity_ruler;
 pub mod lemmatizer;
 pub mod sentencizer;
 pub mod span_ruler;
 
+pub use attribute_ruler::{AttributeRuler, AttributeRulerPattern};
 pub use entity_ruler::EntityRuler;
 pub use lemmatizer::{Lemmatizer, LemmatizerMode};
 pub use sentencizer::Sentencizer;

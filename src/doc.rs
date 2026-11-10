@@ -37,9 +37,22 @@ pub struct TokenC {
     pub ent_type: u64,
     pub ent_kb_id: u64,
     pub ent_id: u64,
+    /// Number of left children (set by `set_children_from_heads`).
+    pub l_kids: u32,
+    /// Number of right children.
+    pub r_kids: u32,
+    /// Leftmost token of the subtree.
+    pub l_edge: usize,
+    /// Rightmost token of the subtree.
+    pub r_edge: usize,
 }
 
 impl TokenC {
+    /// spaCy's `Token.missing_head`: no dependency annotation.
+    pub fn missing_head(&self) -> bool {
+        self.dep == 0 && self.head == 0
+    }
+
     /// A fresh token for a lexeme.
     pub fn new(lex: Arc<LexemeC>, byte_len: usize) -> Self {
         TokenC {
@@ -60,8 +73,25 @@ impl TokenC {
             ent_type: 0,
             ent_kb_id: 0,
             ent_id: 0,
+            l_kids: 0,
+            r_kids: 0,
+            l_edge: 0,
+            r_edge: 0,
         }
     }
+}
+
+/// Default for tokens outside the given spans in [`Doc::set_ents_with`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EntsDefault {
+    /// Set to `O`.
+    Outside,
+    /// Set to missing.
+    Missing,
+    /// Set to blocked (`B` with no label).
+    Blocked,
+    /// Keep the current annotation.
+    Unmodified,
 }
 
 /// A labelled span stored on a doc (`doc.spans[key]` or entity).
@@ -154,6 +184,8 @@ impl Doc {
             let w = w.as_ref();
             let sp = spaces.map(|s| s.get(i).copied().unwrap_or(false)).unwrap_or(true);
             let mut t = TokenC::new(vocab.get(w), w.len());
+            t.l_edge = i;
+            t.r_edge = i;
             t.byte_idx = text.len();
             t.idx = idx;
             t.spacy = sp;
@@ -271,48 +303,44 @@ impl Doc {
 
     // ---------------------------------------------------------------- entities
 
-    /// Named entities, derived from the tokens' IOB annotation.
+    /// Named entities, derived from the tokens' IOB annotation (as `doc.ents`).
     pub fn ents(&self) -> Vec<Span<'_>> {
-        let mut out = Vec::new();
-        let mut cur: Option<SpanC> = None;
+        let mut out: Vec<SpanC> = Vec::new();
+        let mut start: Option<usize> = None;
+        let (mut label, mut kb, mut id) = (0u64, 0u64, 0u64);
         for (i, t) in self.tokens.iter().enumerate() {
-            match t.ent_iob {
-                3 => {
-                    if let Some(c) = cur.take() {
-                        out.push(c);
-                    }
-                    let mut c = SpanC::new(i, i + 1);
-                    c.label = t.ent_type;
-                    c.kb_id = t.ent_kb_id;
-                    c.id = t.ent_id;
-                    cur = Some(c);
+            if t.ent_iob == 1 {
+                if start.is_none() {
+                    // spaCy raises E093 here; be lenient and start an entity.
+                    start = Some(i);
+                    label = t.ent_type;
+                    kb = t.ent_kb_id;
+                    id = t.ent_id;
                 }
-                1 => {
-                    if let Some(c) = cur.as_mut().filter(|c| c.label == t.ent_type) {
-                        c.end = i + 1;
-                    } else {
-                        if let Some(c) = cur.take() {
-                            out.push(c);
-                        }
-                        // An I without a B starts a new entity, as in spaCy.
-                        let mut c = SpanC::new(i, i + 1);
-                        c.label = t.ent_type;
-                        c.kb_id = t.ent_kb_id;
-                        c.id = t.ent_id;
-                        cur = Some(c);
-                    }
+            } else if t.ent_iob == 2 || t.ent_iob == 0 || (t.ent_iob == 3 && t.ent_type == 0) {
+                if let Some(s) = start.take() {
+                    out.push(SpanC { start: s, end: i, label, kb_id: kb, id });
                 }
-                _ => {
-                    if let Some(c) = cur.take() {
-                        out.push(c);
-                    }
+                label = 0;
+                kb = 0;
+                id = 0;
+            } else if t.ent_iob == 3 {
+                if let Some(s) = start.take() {
+                    out.push(SpanC { start: s, end: i, label, kb_id: kb, id });
                 }
+                start = Some(i);
+                label = t.ent_type;
+                kb = t.ent_kb_id;
+                id = t.ent_id;
             }
         }
-        if let Some(c) = cur.take() {
-            out.push(c);
+        if let Some(s) = start {
+            out.push(SpanC { start: s, end: self.len(), label, kb_id: kb, id });
         }
-        out.into_iter().map(|c| Span { doc: self, c }).collect()
+        out.into_iter()
+            .filter(|c| !self.vocab.strings.get_or_empty(c.label).is_empty())
+            .map(|c| Span { doc: self, c })
+            .collect()
     }
 
     /// Entity span data (owned).
@@ -320,38 +348,88 @@ impl Doc {
         self.ents().into_iter().map(|s| s.c).collect()
     }
 
-    /// Set entities, like `doc.ents = spans`. Tokens outside the spans get
-    /// IOB `O` (or missing if `default_missing`).
-    pub fn set_ents(&mut self, ents: &[SpanC], default_missing: bool) -> Result<(), crate::Error> {
+    /// Set entities like `doc.ents = spans` (other tokens become `O`).
+    pub fn set_ents(&mut self, ents: &[SpanC]) -> Result<(), crate::Error> {
+        self.set_ents_with(ents, &[], &[], &[], EntsDefault::Outside)
+    }
+
+    /// `Doc.set_ents(entities, blocked=, missing=, outside=, default=)`.
+    pub fn set_ents_with(
+        &mut self,
+        entities: &[SpanC],
+        blocked: &[SpanC],
+        missing: &[SpanC],
+        outside: &[SpanC],
+        default: EntsDefault,
+    ) -> Result<(), crate::Error> {
+        let entities: Vec<&SpanC> = entities.iter().filter(|e| e.label > 0).collect();
         let mut seen = vec![false; self.len()];
-        for e in ents {
-            if e.end > self.len() || e.start > e.end {
-                return Err(crate::Error::Value(format!("entity span {}..{} out of range", e.start, e.end)));
+        for sp in entities.iter().copied().chain(blocked).chain(missing).chain(outside) {
+            if sp.end > self.len() || sp.start > sp.end {
+                return Err(crate::Error::Value(format!("span {}..{} out of range", sp.start, sp.end)));
             }
-            for s in seen.iter_mut().take(e.end).skip(e.start) {
-                if *s {
-                    return Err(crate::Error::Value(
-                        "[E103] Trying to set conflicting doc.ents: a token can only be part of one entity".into(),
-                    ));
+            for i in sp.start..sp.end {
+                if seen[i] {
+                    return Err(crate::Error::Value(format!(
+                        "[E1010] Unable to set entity information for token {i} which is included in more than one span in entities, blocked, missing or outside."
+                    )));
                 }
-                *s = true;
+                seen[i] = true;
             }
         }
-        for t in self.tokens.iter_mut() {
-            t.ent_iob = if default_missing { 0 } else { 2 };
-            t.ent_type = 0;
-            t.ent_kb_id = 0;
-            t.ent_id = 0;
-        }
-        for e in ents {
+        for e in &entities {
             for i in e.start..e.end {
                 let t = &mut self.tokens[i];
                 t.ent_iob = if i == e.start { 3 } else { 1 };
                 t.ent_type = e.label;
                 t.ent_kb_id = e.kb_id;
-                t.ent_id = e.id;
+                if e.id != 0 {
+                    t.ent_id = e.id;
+                }
             }
         }
+        for (spans, iob) in [(blocked, 3u8), (missing, 0u8), (outside, 2u8)] {
+            for sp in spans {
+                for i in sp.start..sp.end {
+                    self.tokens[i].ent_iob = iob;
+                    self.tokens[i].ent_type = 0;
+                }
+            }
+        }
+        if default != EntsDefault::Unmodified {
+            for (i, t) in self.tokens.iter_mut().enumerate() {
+                if !seen[i] {
+                    t.ent_type = 0;
+                    t.ent_iob = match default {
+                        EntsDefault::Outside => 2,
+                        EntsDefault::Missing => 0,
+                        _ => 3,
+                    };
+                }
+            }
+        }
+        for i in 0..self.len().saturating_sub(1) {
+            if (self.tokens[i].ent_iob == 0 || self.tokens[i].ent_iob == 2) && self.tokens[i + 1].ent_iob == 1 {
+                self.tokens[i + 1].ent_iob = 3;
+            }
+        }
+        Ok(())
+    }
+
+    /// Set heads (absolute indices) and dependency labels, then recompute
+    /// children, edges and sentence boundaries.
+    pub fn set_heads<S: AsRef<str>>(&mut self, heads: &[usize], deps: &[S]) -> Result<(), crate::Error> {
+        if heads.len() != self.len() || deps.len() != self.len() {
+            return Err(crate::Error::Value("heads/deps length must equal doc length".into()));
+        }
+        for (i, (h, d)) in heads.iter().zip(deps).enumerate() {
+            if *h >= self.len() {
+                return Err(crate::Error::Value(format!("head {h} out of range")));
+            }
+            self.tokens[i].head = *h as isize - i as isize;
+            self.tokens[i].dep = self.vocab.strings.add(d.as_ref());
+        }
+        crate::models::parser::set_children_from_heads(&mut self.tokens);
         Ok(())
     }
 
@@ -658,23 +736,31 @@ impl<'a> Token<'a> {
             i: self.doc.head_of(self.i),
         }
     }
-    /// Direct dependents, left to right.
-    pub fn children(&self) -> impl Iterator<Item = Token<'a>> + 'a {
+    /// Left dependents (spaCy's `Token.lefts`, scanning from `l_edge`).
+    pub fn lefts(&self) -> impl Iterator<Item = Token<'a>> + 'a {
         let doc = self.doc;
         let i = self.i;
-        (0..doc.len())
-            .filter(move |&j| j != i && doc.head_of(j) == i)
-            .map(move |j| Token { doc, i: j })
+        let le = self.c().l_edge.min(i);
+        (le..i).filter(move |&j| doc.head_of(j) == i).map(move |j| Token { doc, i: j })
     }
-    /// Left dependents.
-    pub fn lefts(&self) -> impl Iterator<Item = Token<'a>> + 'a {
-        let i = self.i;
-        self.children().filter(move |t| t.i < i)
-    }
-    /// Right dependents.
+    /// Right dependents (spaCy's `Token.rights`, scanning to `r_edge`).
     pub fn rights(&self) -> impl Iterator<Item = Token<'a>> + 'a {
+        let doc = self.doc;
         let i = self.i;
-        self.children().filter(move |t| t.i > i)
+        let re = self.c().r_edge.max(i).min(doc.len().saturating_sub(1));
+        (i + 1..=re).filter(move |&j| doc.head_of(j) == i).map(move |j| Token { doc, i: j })
+    }
+    /// Direct dependents, left to right.
+    pub fn children(&self) -> impl Iterator<Item = Token<'a>> + 'a {
+        self.lefts().chain(self.rights())
+    }
+    /// Number of left children.
+    pub fn n_lefts(&self) -> usize {
+        self.lefts().count()
+    }
+    /// Number of right children.
+    pub fn n_rights(&self) -> usize {
+        self.rights().count()
     }
     /// Ancestors from head up to the root.
     pub fn ancestors(&self) -> Vec<Token<'a>> {
@@ -694,23 +780,31 @@ impl<'a> Token<'a> {
     pub fn is_ancestor(&self, other: &Token<'_>) -> bool {
         other.ancestors().iter().any(|a| a.i == self.i)
     }
-    /// The token and all its descendants, in order.
+    /// The token and all its descendants, in order (`Token.subtree`).
     pub fn subtree(&self) -> Vec<Token<'a>> {
-        (0..self.doc.len())
-            .filter(|&j| {
-                let t = Token { doc: self.doc, i: j };
-                j == self.i || self.is_ancestor(&t)
-            })
-            .map(|j| Token { doc: self.doc, i: j })
-            .collect()
+        let mut out = Vec::new();
+        self.collect_subtree(&mut out, 0);
+        out
+    }
+    fn collect_subtree(&self, out: &mut Vec<Token<'a>>, depth: usize) {
+        if depth > self.doc.len() {
+            return;
+        }
+        for l in self.lefts() {
+            l.collect_subtree(out, depth + 1);
+        }
+        out.push(*self);
+        for r in self.rights() {
+            r.collect_subtree(out, depth + 1);
+        }
     }
     /// Leftmost token of the subtree.
     pub fn left_edge(&self) -> Token<'a> {
-        self.subtree()[0]
+        Token { doc: self.doc, i: self.c().l_edge.min(self.i) }
     }
     /// Rightmost token of the subtree.
     pub fn right_edge(&self) -> Token<'a> {
-        *self.subtree().last().expect("subtree has self")
+        Token { doc: self.doc, i: self.c().r_edge.max(self.i) }
     }
     /// Neighbouring token at offset `k`.
     pub fn nbor(&self, k: isize) -> Option<Token<'a>> {

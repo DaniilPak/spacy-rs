@@ -22,17 +22,17 @@ pub enum LemmatizerMode {
     Rule,
 }
 
-/// Lemmatizer tables.
+/// Lemmatizer tables. Keys are spaCy string IDs (as in `Lookups` tables).
 #[derive(Clone, Debug, Default)]
 pub struct LemmaTables {
     /// `lemma_lookup`: form → lemma.
-    pub lookup: HashMap<String, String>,
+    pub lookup: HashMap<u64, String>,
     /// `lemma_rules`: pos → [(old suffix, new suffix)].
-    pub rules: HashMap<String, Vec<(String, String)>>,
+    pub rules: HashMap<u64, Vec<(String, String)>>,
     /// `lemma_exc`: pos → form → lemmas.
-    pub exc: HashMap<String, HashMap<String, Vec<String>>>,
+    pub exc: HashMap<u64, HashMap<String, Vec<String>>>,
     /// `lemma_index`: pos → known lemmas.
-    pub index: HashMap<String, std::collections::HashSet<String>>,
+    pub index: HashMap<u64, std::collections::HashSet<String>>,
 }
 
 fn gunzip_json(bytes: &[u8]) -> Value {
@@ -41,12 +41,16 @@ fn gunzip_json(bytes: &[u8]) -> Value {
     serde_json::from_str(&s).expect("bundled json")
 }
 
+fn key_id(k: &str) -> u64 {
+    crate::strings::get_string_id(k)
+}
+
 impl LemmaTables {
-    /// Build rule tables from JSON values in spacy-lookups-data format.
+    /// Build tables from JSON values in spacy-lookups-data format (string or numeric keys).
     pub fn from_json(lookup: Option<&Value>, rules: Option<&Value>, exc: Option<&Value>, index: Option<&Value>) -> Self {
         let mut t = LemmaTables::default();
         if let Some(Value::Object(m)) = lookup {
-            t.lookup = m.iter().filter_map(|(k, v)| Some((k.clone(), v.as_str()?.to_string()))).collect();
+            t.lookup = m.iter().filter_map(|(k, v)| Some((key_id(k), v.as_str()?.to_string()))).collect();
         }
         if let Some(Value::Object(m)) = rules {
             for (pos, rs) in m {
@@ -61,7 +65,7 @@ impl LemmaTables {
                             .collect()
                     })
                     .unwrap_or_default();
-                t.rules.insert(pos.clone(), v);
+                t.rules.insert(key_id(pos), v);
             }
         }
         if let Some(Value::Object(m)) = exc {
@@ -77,7 +81,7 @@ impl LemmaTables {
                         h.insert(k.clone(), ls);
                     }
                 }
-                t.exc.insert(pos.clone(), h);
+                t.exc.insert(key_id(pos), h);
             }
         }
         if let Some(Value::Object(m)) = index {
@@ -86,7 +90,7 @@ impl LemmaTables {
                     .as_array()
                     .map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect())
                     .unwrap_or_default();
-                t.index.insert(pos.clone(), set);
+                t.index.insert(key_id(pos), set);
             }
         }
         t
@@ -146,7 +150,7 @@ impl Lemmatizer {
     /// `lookup_lemmatize`.
     pub fn lookup_lemmatize(&self, token: &Token<'_>) -> Vec<String> {
         let t = token.text();
-        vec![self.tables.lookup.get(t).cloned().unwrap_or_else(|| t.to_string())]
+        vec![self.tables.lookup.get(&crate::strings::get_string_id(t)).cloned().unwrap_or_else(|| t.to_string())]
     }
 
     fn is_base_form(&self, token: &Token<'_>) -> bool {
@@ -184,18 +188,19 @@ impl Lemmatizer {
             return vec![py_lower(string)];
         }
         let t = &self.tables;
-        let has_index = t.index.get(&univ_pos).is_some_and(|x| !x.is_empty());
-        let has_exc = t.exc.get(&univ_pos).is_some_and(|x| !x.is_empty());
-        let has_rules = t.rules.get(&univ_pos).is_some_and(|x| !x.is_empty());
+        let pk = crate::strings::get_string_id(&univ_pos);
+        let has_index = t.index.get(&pk).is_some_and(|x| !x.is_empty());
+        let has_exc = t.exc.get(&pk).is_some_and(|x| !x.is_empty());
+        let has_rules = t.rules.get(&pk).is_some_and(|x| !x.is_empty());
         if !(has_index || has_exc || has_rules) {
             return if univ_pos == "propn" { vec![string.to_string()] } else { vec![py_lower(string)] };
         }
         let empty_idx = Default::default();
-        let index = t.index.get(&univ_pos).unwrap_or(&empty_idx);
+        let index = t.index.get(&pk).unwrap_or(&empty_idx);
         let lower = py_lower(string);
         let mut forms: Vec<String> = Vec::new();
         let mut oov: Vec<String> = Vec::new();
-        if let Some(rules) = t.rules.get(&univ_pos) {
+        if let Some(rules) = t.rules.get(&pk) {
             for (old, new) in rules {
                 if let Some(stem) = lower.strip_suffix(old.as_str()) {
                     let form = format!("{stem}{new}");
@@ -212,7 +217,7 @@ impl Lemmatizer {
         }
         let mut seen = std::collections::HashSet::new();
         forms.retain(|f| seen.insert(f.clone()));
-        if let Some(exc) = t.exc.get(&univ_pos).and_then(|e| e.get(&lower)) {
+        if let Some(exc) = t.exc.get(&pk).and_then(|e| e.get(&lower)) {
             for f in exc {
                 if !forms.contains(f) {
                     forms.insert(0, f.clone());

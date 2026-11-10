@@ -2,3 +2,4 @@
 Cargo.lock.bak
 __pycache__/
 *.pyc
+/tests/models/
